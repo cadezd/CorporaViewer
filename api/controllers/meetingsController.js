@@ -226,7 +226,6 @@ const getMeetingAsText = async (req, res) => {
         return;
     }
 
-    // TODO: getAsText verjetno ne naredi nic, lahko uporabim kar podatke iz meetinga ki jih potem prefiltriram na backendu (inner hits je prevelik size, bi moral biti najvec 100)
     // get all segments in a meeting
     const meeting = await esClient.search({
         index: process.env.MEETINGS_INDEX_NAME || 'meetings-index',
