@@ -54,7 +54,7 @@ async function getAll(filters, page) {
         console.error(error);
         return {error: "Internal server error"};
     }
-};
+}
 
 
 // this function will replace search, since its ineficient. search function calls getAllValidMeetings which takes too long, since it has to go through all meetings
@@ -162,14 +162,14 @@ const getPage = async (req, res) => {
         }
 
         // open pit if page is 1
-        const pit = page === 1 ? await esClient.openPointInTime({
+        const pit = page == 1 ? await esClient.openPointInTime({
             index: process.env.MEETINGS_INDEX_NAME || 'meetings-index',
             keep_alive: '30m'
         }) : {id: pitId}
 
         query.pit = pit
 
-        // console.log(JSON.stringify(query, null, 2))
+        console.log(JSON.stringify(query, null, 2))
 
         const response = await esClient.search(query);
 
@@ -258,9 +258,17 @@ const getMeetingAsText = async (req, res) => {
     title = utils.buildHtmlElement("<h2 class='title-text'>", searchedForMeeting.titles.find(title => title.lang === pageLang)?.title, utils.getNoTitleMessage(pageLang), "</h2>");
     agendas = utils.buildHtmlElement("<div class='agenda-text'>", searchedForMeeting.agendas.find(agenda => agenda.lang === pageLang)?.items.map(item => item.text).join("</div><div class='agenda-text'>"), utils.getNoAgendaMessage(pageLang), "</div>");
     content = Object.entries(segments).map(([segment_id, segment]) => {
-        const speaker = utils.buildHtmlElement("<br><h5 class='speaker-text'>", segment.speaker, utils.getNoAgendaMessage(pageLang), "</h5>");
-        const sentences = utils.buildHtmlElement("<div class='segment-text'>", segment.sentences.map(sentence => sentence.translations.find(translation => translation.lang == pageLang)?.text).join(""), "", "</div>");
-        return speaker + sentences;
+        const speakerElement = utils.buildHtmlElement("<br><h5 class='speaker-text'>", segment.speaker, utils.getNoAgendaMessage(pageLang), "</h5>");
+
+        const sentenceElements = segment.sentences.map(sentence => {
+            return utils.joinWords(
+                sentence.translations.find(translation => translation.lang === pageLang)?.words
+            )
+        })
+
+        const segmentElement = utils.buildHtmlElement("<div class='segment-text'>", sentenceElements.join(""), "", "</div>");
+
+        return speakerElement + segmentElement;
     })
 
     text = title
