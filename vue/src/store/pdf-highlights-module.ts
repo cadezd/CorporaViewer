@@ -1,6 +1,6 @@
-import { Module, MutationTree } from "vuex";
-import { RootState } from "@/store/index";
-import { PdfHighlights, PdfPageMatch } from "@/types/Highlights";
+import {Module, MutationTree} from "vuex";
+import {RootState} from "@/store/index";
+import {PdfHighlights} from "@/types/Highlights";
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
 
 interface PdfHighlightsState {
@@ -19,6 +19,9 @@ const mutations: MutationTree<PdfHighlightsState> = {
     },
     updateSearch(state: PdfHighlightsState, search: () => string) {
         state.instance.search = search;
+    },
+    updateMeetingId(state: PdfHighlightsState, meetingId: string | undefined) {
+        state.instance.meetingId = meetingId;
     },
     updateMatchesCount(state: PdfHighlightsState, event: any) {
         state.instance.onMatchesFound(event);

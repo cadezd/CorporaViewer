@@ -1,9 +1,10 @@
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
-import { reactive } from 'vue';
+import {reactive} from 'vue';
 
 export interface Highlights {
 
     // variables
+    meetingId?: string;
     search: () => string;
     index: number;
     touched: boolean;
@@ -42,6 +43,7 @@ export class TranscriptHighlights implements TranscriptHighlights {
         return reactive(new TranscriptHighlights()) as TranscriptHighlights;
     }
 
+    meetingId?: string;
     search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
@@ -72,20 +74,53 @@ export class TranscriptHighlights implements TranscriptHighlights {
     }
 
     // this function is called whenever search string changes or original transcript changes, so transcript is never just an empty string
-    findMatches = () => {
+    findMatches = async () => {
         this.clearMatches();
         if (this.search().length > 2) {
             const searchTerms = this.search().split(' ');
             let highlightedTranscript = this.transcript;
 
+            /*
+            // simulate the api response that return following data ['DZK_1903-10-06_44_03_seg56.s11.w41', 'DZK_1903-10-06_44_03_seg56.s10.w26', 'DZK_1903-10-06_44_03_seg58.s36.w21', 'DZK_1903-10-06_44_03_seg59.s11.w18']
+            let promise: Promise<string[]> = new Promise((resolve, reject) => {
+                setTimeout(() => resolve(['DZK_1903-10-06_44_03_seg56.s11.w41', 'DZK_1903-10-06_44_03_seg56.s10.w26', 'DZK_1903-10-06_44_03_seg58.s36.w21', 'DZK_1903-10-06_44_03_seg59.s11.w18']), 2000);
+            });
+
+            await promise.then((data: string[]) => {
+                data.forEach((id: string) => {
+                    let element = document.getElementById(id);
+                    if (element)
+                        element.classList.add('transcript-highlight');
+                });
+            });
+
+             */
+
+            let ids = ['DZK_1903-10-06_44_03_seg56.s11.w41', 'DZK_1903-10-06_44_03_seg56.s10.w26', 'DZK_1903-10-06_44_03_seg58.s36.w21', 'DZK_1903-10-06_44_03_seg59.s11.w18'];
+
+            // append the transcript-highlight class to the elements with the given ids in the transcript using regex
+            ids.forEach((id: string) => {
+                let tmp = document.createElement('template');
+                tmp.innerHTML = highlightedTranscript;
+
+                let element = tmp.content.getElementById(id);
+                if (element)
+                    element.classList.add('transcript-highlight');
+
+                highlightedTranscript = tmp.innerHTML;
+            });
+
+
+            /*
             searchTerms.forEach((searchTerm: string) => {
                 const regex = new RegExp(`(?!<[^>]*>)${searchTerm}(?![^<]*>)`, 'gi');
                 highlightedTranscript = highlightedTranscript.replace(regex, (match) => `<span class="transcript-highlight">${match}</span>`);
             });
+            */
+
 
             this.transcript = highlightedTranscript;
-            if (this.container) 
-            {
+            if (this.container) {
                 this.container.innerHTML = highlightedTranscript;
                 this._saveHighlights(true);
             }
@@ -108,7 +143,7 @@ export class TranscriptHighlights implements TranscriptHighlights {
     scrollToHighlight = () => {
         if (this.highlights && this.highlights.length > 0) {
             const highlight = this.highlights[this.index];
-            highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            highlight.scrollIntoView({behavior: 'smooth', block: 'center'});
         }
     }
 
@@ -137,7 +172,7 @@ export class TranscriptHighlights implements TranscriptHighlights {
         console.log("updateTranscriptIndex not implemented");
     };
 
-    updateTranscriptTotal: (total: number) => void = (total: number) => { 
+    updateTranscriptTotal: (total: number) => void = (total: number) => {
         console.log("updateTranscriptTotal not implemented");
     };
 
@@ -145,8 +180,7 @@ export class TranscriptHighlights implements TranscriptHighlights {
         if (this.container) {
             this.container.innerHTML = this.transcript;
             this._saveHighlights(false);
-        }
-        else console.error("container not defined");
+        } else console.error("container not defined");
     }
 }
 
@@ -181,7 +215,7 @@ export interface PdfHighlights extends Highlights {
     // functions
     onMatchesFound: (event: any) => void;
     onNoMatchesFound: () => void;
-    refreshHighlights: () => void;  
+    refreshHighlights: () => void;
     displayedHighlights: () => string;
 
     // callbacks
@@ -198,6 +232,7 @@ export class PdfHighlights implements PdfHighlights {
     }
 
     // variables
+    meetingId?: string;
     search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
@@ -223,6 +258,7 @@ export class PdfHighlights implements PdfHighlights {
     findMatches = () => {
         if (this.search().length > 2) {
             console.log(this.source)
+            /*
             this.eventBus?.dispatch('find', {
                 source: this.source,
                 highlightAll: true,
@@ -230,6 +266,8 @@ export class PdfHighlights implements PdfHighlights {
                 caseSensitive: false,
                 query: this.search().split(' ')
             });
+
+             */
             this.touched = true;
         } else if (this.total > 0) {
             this.clearMatches();

@@ -1,6 +1,6 @@
-import { Module, MutationTree } from "vuex";
-import { RootState } from "@/store/index";
-import { TranscriptHighlights } from "@/types/Highlights";
+import {Module, MutationTree} from "vuex";
+import {RootState} from "@/store/index";
+import {TranscriptHighlights} from "@/types/Highlights";
 
 interface TranscriptHighlightsState {
     instance: TranscriptHighlights;
@@ -19,7 +19,10 @@ const mutations: MutationTree<TranscriptHighlightsState> = {
     updateSearch(state: TranscriptHighlightsState, search: () => string) {
         state.instance.search = search;
     },
-    updateOriginalTranscript(state: TranscriptHighlightsState, params: {text: string, callback: () => void}) {
+    updateMeetingId(state: TranscriptHighlightsState, meetingId: string | undefined) {
+        state.instance.meetingId = meetingId;
+    },
+    updateOriginalTranscript(state: TranscriptHighlightsState, params: { text: string, callback: () => void }) {
         state.instance.originalTranscript = params.text;
         params.callback();
         state.instance.findMatches();
