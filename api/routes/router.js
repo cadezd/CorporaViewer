@@ -13,6 +13,7 @@ router.get("/krajevnaImena/getAll", krajevnaImenaController.getAll);
 
 router.get("/meetings/getMeetingAsText", meetingsController.getMeetingAsText);
 router.get("/meetings/getPage/:page", meetingsController.getPage);
+router.get("/meetings/:meetingId/getWordsToHighlight", meetingsController.getWordsToHighlight)
 
 router.get("/pdf/getById/:id", pdfController.getById);
 router.get("/pdf/getThumbnailById/:id", pdfController.getThumbnailById);

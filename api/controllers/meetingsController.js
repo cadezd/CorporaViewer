@@ -2,6 +2,7 @@ require('dotenv').config();
 const esClient = require('../../services/elasticsearch');
 const async = require('async');
 const utils = require('../utils/utils');
+const mockDb = require('../utils/mockDb');
 
 /**
  * Retrieves all meetings based on the provided filters and pagination. Does not use pit.
@@ -169,7 +170,7 @@ const getPage = async (req, res) => {
 
         query.pit = pit
 
-        console.log(JSON.stringify(query, null, 2))
+        // console.log(JSON.stringify(query, null, 2))
 
         const response = await esClient.search(query);
 
@@ -219,7 +220,9 @@ const getPage = async (req, res) => {
  */
 const getMeetingAsText = async (req, res) => {
     const meetingId = req.query.meetingId
+    // TODO: rename variable so that it is clear what is the purpose of the variable
     const lang = req.query.lang
+    const pageLang = lang || req.query.pageLang
 
     if (meetingId == null || meetingId === "") {
         res.status(400).json({error: "Bad request, missing meetingId"});
@@ -252,24 +255,39 @@ const getMeetingAsText = async (req, res) => {
     }, {});
 
     let title = "", agendas = "", content = "", text = "";
-    let pageLang = lang || req.query.pageLang;
 
-    title = utils.buildHtmlElement("<h2 class='title-text'>", searchedForMeeting.titles.find(title => title.lang === pageLang)?.title, utils.getNoTitleMessage(pageLang), "</h2>");
-    agendas = utils.buildHtmlElement("<div class='agenda-text'>", searchedForMeeting.agendas.find(agenda => agenda.lang === pageLang)?.items.map(item => item.text).join("</div><div class='agenda-text'>"), utils.getNoAgendaMessage(pageLang), "</div>");
+    // gets the title in chosen or default language
+    title = utils.buildHtmlElement(
+        "<h2 class='title-text'>",
+        searchedForMeeting.titles.find(title => title.lang === pageLang)?.title,
+        utils.getNoTitleMessage(pageLang),
+        "</h2>"
+    );
+
+    // gets the agendas in chosen or default language
+    agendas = utils.buildHtmlElement(
+        "<div class='agenda-text'>",
+        searchedForMeeting.agendas.find(agenda => agenda.lang === pageLang)?.items.map(item => item.text).join("</div><div class='agenda-text'>"),
+        utils.getNoAgendaMessage(pageLang),
+        "</div>"
+    );
+
+    // gets the content in chosen or original language
     content = Object.entries(segments).map(([segment_id, segment]) => {
         const speakerElement = utils.buildHtmlElement("<br><h5 class='speaker-text'>", segment.speaker, utils.getNoAgendaMessage(pageLang), "</h5>");
 
-        // TODO: popravi da po defaultu vrne originalni predvod
         const sentenceElements = segment.sentences.map(sentence => {
             return utils.buildHtmlElement(
                 `<span id='${sentence.id}'>`,
                 utils.joinWords(
-                    sentence.translations.find(translation => translation.lang === pageLang)?.words
+                    sentence.translations.find(translation => {
+                        return (lang && translation.lang === lang) || (!lang && translation.original === 1)
+                    })?.words
                 ),
                 "",
                 "</span>"
             )
-        })
+        });
 
         const segmentElement = utils.buildHtmlElement("<div class='segment-text'>", sentenceElements.join(""), "", "</div>");
 
@@ -286,11 +304,29 @@ const getMeetingAsText = async (req, res) => {
 
     res.json({
         text: text
-    })
+    });
+}
+
+
+const getWordsToHighlight = async (req, res) => {
+    const meetingId = req.params.meetingId;
+    const words = req.query.words;
+    const language = req.query.language;
+
+    try {
+        // Simulate a request to Elastic search database
+        const response = await mockDb.getWordsToHighlight(meetingId, words, language);
+
+        res.json(response);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({error: "Internal server error"});
+    }
 }
 
 
 module.exports = {
     getMeetingAsText,
+    getWordsToHighlight,
     getPage
 };
