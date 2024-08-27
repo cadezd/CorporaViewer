@@ -259,9 +259,15 @@ const getMeetingAsText = async (req, res) => {
     content = Object.entries(segments).map(([segment_id, segment]) => {
         const speakerElement = utils.buildHtmlElement("<br><h5 class='speaker-text'>", segment.speaker, utils.getNoAgendaMessage(pageLang), "</h5>");
 
+        // TODO: popravi da po defaultu vrne originalni predvod
         const sentenceElements = segment.sentences.map(sentence => {
-            return utils.joinWords(
-                sentence.translations.find(translation => translation.lang === pageLang)?.words
+            return utils.buildHtmlElement(
+                `<span id='${sentence.id}'>`,
+                utils.joinWords(
+                    sentence.translations.find(translation => translation.lang === pageLang)?.words
+                ),
+                "",
+                "</span>"
             )
         })
 
