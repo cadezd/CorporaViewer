@@ -23,6 +23,9 @@ const mutations: MutationTree<PdfHighlightsState> = {
     updateMeetingId(state: PdfHighlightsState, meetingId: string | undefined) {
         state.instance.meetingId = meetingId;
     },
+    updateLanguage(state: PdfHighlightsState, language: string | undefined) {
+        state.instance.language = language;
+    },
     updateMatchesCount(state: PdfHighlightsState, event: any) {
         state.instance.onMatchesFound(event);
     },
