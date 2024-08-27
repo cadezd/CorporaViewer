@@ -40,7 +40,11 @@ export default createStore({
         updateMeetingId(state: RootState, meetingId: string | undefined) {
             this.commit("transcriptHighlightsModule/updateMeetingId", meetingId);
             this.commit("pdfHighlightsModule/updateMeetingId", meetingId);
-        }
+        },
+        updateLanguage(state: RootState, language: string | undefined) {
+            this.commit("transcriptHighlightsModule/updateLanguage", language);
+            this.commit("pdfHighlightsModule/updateLanguage", language);
+        },
     },
     actions: {}
 })

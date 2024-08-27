@@ -22,6 +22,9 @@ const mutations: MutationTree<TranscriptHighlightsState> = {
     updateMeetingId(state: TranscriptHighlightsState, meetingId: string | undefined) {
         state.instance.meetingId = meetingId;
     },
+    updateLanguage(state: TranscriptHighlightsState, language: string | undefined) {
+        state.instance.language = language;
+    },
     updateOriginalTranscript(state: TranscriptHighlightsState, params: { text: string, callback: () => void }) {
         state.instance.originalTranscript = params.text;
         params.callback();

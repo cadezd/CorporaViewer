@@ -1,10 +1,12 @@
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
 import {reactive} from 'vue';
+import axios from "axios";
 
 export interface Highlights {
 
     // variables
     meetingId?: string;
+    language?: string;
     search: () => string;
     index: number;
     touched: boolean;
@@ -44,6 +46,7 @@ export class TranscriptHighlights implements TranscriptHighlights {
     }
 
     meetingId?: string;
+    language?: string;
     search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
@@ -96,9 +99,25 @@ export class TranscriptHighlights implements TranscriptHighlights {
 
              */
 
-            let ids = ['DZK_1903-10-06_44_03_seg56.s11.w41', 'DZK_1903-10-06_44_03_seg56.s10.w26', 'DZK_1903-10-06_44_03_seg58.s36.w21', 'DZK_1903-10-06_44_03_seg59.s11.w18'];
+            let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getWordsToHighlight?words=${this.search()}`;
+            if (this.language) URL += `&language=${this.language}`;
 
-            // append the transcript-highlight class to the elements with the given ids in the transcript using regex
+            let response = await axios.get(URL);
+
+            let wordsToHighlight = response.data;
+
+            wordsToHighlight.forEach((word: any) => {
+                let tmp = document.createElement('template');
+                tmp.innerHTML = highlightedTranscript;
+
+                let element = tmp.content.getElementById(word.id);
+                if (element)
+                    element.classList.add('transcript-highlight');
+
+                highlightedTranscript = tmp.innerHTML;
+            });
+
+            /*
             ids.forEach((id: string) => {
                 let tmp = document.createElement('template');
                 tmp.innerHTML = highlightedTranscript;
@@ -109,6 +128,8 @@ export class TranscriptHighlights implements TranscriptHighlights {
 
                 highlightedTranscript = tmp.innerHTML;
             });
+
+             */
 
 
             /*
@@ -233,6 +254,7 @@ export class PdfHighlights implements PdfHighlights {
 
     // variables
     meetingId?: string;
+    language?: string;
     search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
