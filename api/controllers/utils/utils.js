@@ -343,14 +343,14 @@ const buildQueryBody = (words, placeNames, speaker, filters) => {
  * @param {string[]} words - The words to search for in the meeting.
  * @param {string|undefined} speaker - The speaker who spoke the words (optional).
  * @param {string|undefined} lang - The language of the words (optional), if undefined, defaults to original language.
- * @returns {{bool: {filter: [{term: {meeting_id}},{term: {speaker}}], should: *[], minimum_should_match: number}}}
+ * @returns {{bool: {filter: [{term: {meeting_id}},{term: {speaker}}], should: *[], minimum_should_match: number}} | {}} - The query body for searching words in the meeting.
  */
 const wordsSearchQueryBuilder = (meetingId, words, speaker, lang) => {
     if (!meetingId)
-        throw new Error("Meeting id is required for building the query body");
+        return {};
 
     if (!words || words.length === 0)
-        throw new Error("Array of words is required for building the query body");
+        return {};
 
 
     let speakerFilter;
@@ -391,7 +391,7 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang) => {
             filter: [
                 {
                     term: {
-                        "meeting_id": meetingId
+                        "meeting_id.keyword": meetingId
                     }
                 },
                 speakerFilter,
@@ -420,12 +420,12 @@ const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
             filter: [
                 {
                     term: {
-                        "meeting_id": meetingId
+                        "meeting_id.keyword": meetingId
                     }
                 },
                 {
                     terms: {
-                        "sentence_id": sentencesIds
+                        "sentence_id.keyword": sentencesIds
                     }
                 }
             ]
@@ -443,10 +443,10 @@ const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
 const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
 
     if (!meetingId)
-        throw new Error("Meeting id is required for building the query body");
+        return {};
 
     if (!phrases || phrases.length === 0)
-        throw new Error("Array of phrases is required for building the query body");
+        return {};
 
     let speakerFilter;
     if (speaker) {
@@ -497,7 +497,7 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
             filter: [
                 {
                     term: {
-                        "meeting_id": meetingId
+                        "meeting_id.keyword": meetingId
                     }
                 },
                 speakerFilter,
@@ -537,13 +537,13 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
 const wordsInPhrasesSearchQueryBuilder = (meetingId, phrase, sentencesIds) => {
 
     if (!meetingId)
-        throw new Error("Meeting id is required for building the query body");
+        return {};
 
     if (!phrase || phrase.length === 0)
-        throw new Error("Array of phrases is required for building the query body");
+        return {};
 
     if (!sentencesIds || sentencesIds.length === 0)
-        throw new Error("Array of sentences is required for building the query body");
+        return {};
 
 
     const wordsInPhrasesFilters = phrase.map(word => {
@@ -562,12 +562,12 @@ const wordsInPhrasesSearchQueryBuilder = (meetingId, phrase, sentencesIds) => {
             filter: [
                 {
                     term: {
-                        "meeting_id": meetingId
+                        "meeting_id.keyword": meetingId
                     }
                 },
                 {
                     terms: {
-                        "sentence_id": sentencesIds
+                        "sentence_id.keyword": sentencesIds
                     }
                 },
                 {
