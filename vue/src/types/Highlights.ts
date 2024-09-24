@@ -1,6 +1,7 @@
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
 import {reactive} from 'vue';
 import axios from "axios";
+import {Word} from "@/types/Word";
 
 export interface Highlights {
 
@@ -106,15 +107,49 @@ export class TranscriptHighlights implements TranscriptHighlights {
 
             let wordsToHighlight = response.data;
 
-            wordsToHighlight.forEach((word: any) => {
-                let tmp = document.createElement('template');
-                tmp.innerHTML = highlightedTranscript;
+            wordsToHighlight.forEach((wordsAndPhrases: Word[]) => {
 
-                let element = tmp.content.getElementById(word.id);
-                if (element)
-                    element.classList.add('transcript-highlight');
+                if (wordsAndPhrases.length === 1) {
+                    let word = wordsAndPhrases[0];
+                    let tmp = document.createElement('template');
+                    tmp.innerHTML = highlightedTranscript;
 
-                highlightedTranscript = tmp.innerHTML;
+                    let element = tmp.content.getElementById(word.id);
+                    if (element)
+                        element.classList.add('transcript-highlight');
+
+                    highlightedTranscript = tmp.innerHTML;
+                } else {
+                    // wrap the phrase in a span with class transcript-highlight
+                    let span = document.createElement('span');
+                    span.classList.add('transcript-highlight');
+
+                    span.innerHTML = wordsAndPhrases.map((word: Word) => {
+                        return document.getElementById(word.id)?.outerHTML || "";
+                    }).join(' ').trim();
+
+
+                    let tmp = document.createElement('template');
+                    tmp.innerHTML = highlightedTranscript;
+
+                    // delete the original words from the transcript except the first one
+                    wordsAndPhrases.forEach((word: Word, i: number) => {
+                        if (i !== 0) {
+                            let element = tmp.content.getElementById(word.id);
+                            if (element) {
+                                element.remove();
+                            }
+                        }
+                    });
+
+                    let element = tmp.content.getElementById(wordsAndPhrases[0].id);
+                    if (element) {
+                        element.replaceWith(span);
+                    }
+
+                    // remove other words from the transcript
+                    highlightedTranscript = tmp.innerHTML;
+                }
             });
 
             /*

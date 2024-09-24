@@ -697,7 +697,7 @@ export default class PdfView extends Vue {
 
   getWordsToHighlight(): string {
     // replace all non characters (except dot, quotes and slovenian characters) with space, then remove all double spaces
-    return this.wordsToHighlight.replace(/[^a-zA-Z0-9\s\.\u0106\u010c\u0160\u017d\u0107\u010d\u0161\u017e]/g, " ").replace(/\s+/g, " ").trim();
+    return this.wordsToHighlight.replace(/\s+/g, " ").trim();
   }
 
   initStoreParams(): void {

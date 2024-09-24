@@ -14,6 +14,25 @@ var shouldMatchLemmaAndText = (word, filters, speaker) => {
     }
 }
 
+const cleanQuery = (obj) => {
+    if (Array.isArray(obj)) {
+        return obj
+            .map(cleanQuery) // Recursively apply to each item in the array
+            .filter(value => value !== null && value !== undefined); // Remove null and undefined values from the array
+    } else if (obj !== null && typeof obj === 'object') {
+        // Create a new object with non-null values
+        return Object.entries(obj)
+            .reduce((acc, [key, value]) => {
+                const cleanedValue = cleanQuery(value); // Recursively clean each property
+                if (cleanedValue !== null && cleanedValue !== undefined) {
+                    acc[key] = cleanedValue; // Only add non-null, non-undefined values
+                }
+                return acc;
+            }, {});
+    }
+    return obj; // Return the value if it's not an array or object
+}
+
 
 /* PARSERS */
 
@@ -317,6 +336,254 @@ const buildQueryBody = (words, placeNames, speaker, filters) => {
 }
 
 
+/**
+ * Builds the query body for searching words in meeting with given id and other filters.
+ *
+ * @param {string} meetingId - The id of the meeting.
+ * @param {string[]} words - The words to search for in the meeting.
+ * @param {string|undefined} speaker - The speaker who spoke the words (optional).
+ * @param {string|undefined} lang - The language of the words (optional), if undefined, defaults to original language.
+ * @returns {{bool: {filter: [{term: {meeting_id}},{term: {speaker}}], should: *[], minimum_should_match: number}}}
+ */
+const wordsSearchQueryBuilder = (meetingId, words, speaker, lang) => {
+    if (!meetingId)
+        throw new Error("Meeting id is required for building the query body");
+
+    if (!words || words.length === 0)
+        throw new Error("Array of words is required for building the query body");
+
+
+    let speakerFilter;
+    if (speaker) {
+        speakerFilter = {
+            term: {
+                "speaker": speaker
+            }
+        };
+    }
+
+    let langFilter;
+    if (lang) {
+        langFilter = {
+            term: {
+                "lang": lang
+            }
+        };
+    }
+
+    // Single word is a match if it matches either lemma or text, we also allow some fuzziness
+    let wordsFilter = words.map(word => {
+        return {
+            multi_match: {
+                query: word,
+                type: "best_fields",
+                fields: ["text", "lemma"],
+                minimum_should_match: 1,
+                fuzziness: "AUTO:5,10"
+            }
+        }
+    });
+
+
+    // Build the query body
+    let queryBody = {
+        bool: {
+            filter: [
+                {
+                    term: {
+                        "meeting_id": meetingId
+                    }
+                },
+                speakerFilter,
+                langFilter
+            ],
+            should: wordsFilter,
+            minimum_should_match: 1
+        }
+    }
+
+    // Remove null and undefined values from the query body
+    return cleanQuery(queryBody);
+}
+
+
+const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
+    if (!meetingId)
+        throw new Error("Meeting id is required for building the query body");
+
+    if (!sentencesIds)
+        throw new Error("Array of sentences ids is required for building the query body");
+
+    // Build the query body
+    return {
+        bool: {
+            filter: [
+                {
+                    term: {
+                        "meeting_id": meetingId
+                    }
+                },
+                {
+                    terms: {
+                        "sentence_id": sentencesIds
+                    }
+                }
+            ]
+        }
+    };
+}
+
+/**
+ *
+ * @param {string} meetingId
+ * @param {string[][]} phrases
+ * @param {string|undefined} speaker
+ * @param {string|undefined} lang
+ */
+const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
+
+    if (!meetingId)
+        throw new Error("Meeting id is required for building the query body");
+
+    if (!phrases || phrases.length === 0)
+        throw new Error("Array of phrases is required for building the query body");
+
+    let speakerFilter;
+    if (speaker) {
+        speakerFilter = {
+            term: {
+                "speaker": speaker
+            }
+        };
+    }
+
+    let langFilter;
+    if (lang) {
+        langFilter = {
+            term: {
+                "lang": lang
+            }
+        };
+    }
+
+    const phrasesFilters = phrases.map(phrase => {
+        // All words in the phrase must be present in the sentence one after the other in the given order
+        return {
+            span_near: {
+                // We add clauses for each word in the phrase, we allow some fuzziness
+                clauses: phrase.map(word => {
+                    return {
+                        span_multi: {
+                            match: {
+                                fuzzy: {
+                                    "translations.text": {
+                                        value: word,
+                                        fuzziness: "AUTO:5,10"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }),
+                slop: 0,
+                in_order: true,
+            },
+        }
+    });
+
+    // Build the query body
+    let queryBody = {
+        bool: {
+            filter: [
+                {
+                    term: {
+                        "meeting_id": meetingId
+                    }
+                },
+                speakerFilter,
+                langFilter
+            ],
+            should: [
+                {
+                    nested: {
+                        path: "translations",
+                        query: {
+                            bool: {
+                                should: phrasesFilters,
+                                minimum_should_match: 1
+                            }
+                        },
+                        // This tells us if the phrase was found in the original language or in translation
+                        inner_hits: {
+                            name: "matched_translation",
+                            size: 1,
+                        }
+                    }
+                }
+            ]
+        }
+    };
+
+    // Remove null and undefined values from the query body
+    return cleanQuery(queryBody);
+}
+
+/**
+ *
+ * @param {string} meetingId
+ * @param {string[]} phrase
+ * @param {string[]} sentencesIds
+ */
+const wordsInPhrasesSearchQueryBuilder = (meetingId, phrase, sentencesIds) => {
+
+    if (!meetingId)
+        throw new Error("Meeting id is required for building the query body");
+
+    if (!phrase || phrase.length === 0)
+        throw new Error("Array of phrases is required for building the query body");
+
+    if (!sentencesIds || sentencesIds.length === 0)
+        throw new Error("Array of sentences is required for building the query body");
+
+
+    const wordsInPhrasesFilters = phrase.map(word => {
+        return {
+            fuzzy: {
+                text: {
+                    value: word,
+                    fuzziness: "AUTO:5,10"
+                }
+            }
+        }
+    });
+
+    let queryBody = {
+        bool: {
+            filter: [
+                {
+                    term: {
+                        "meeting_id": meetingId
+                    }
+                },
+                {
+                    terms: {
+                        "sentence_id": sentencesIds
+                    }
+                },
+                {
+                    term: {
+                        "original": 1
+                    }
+                }
+            ],
+            should: wordsInPhrasesFilters,
+            minimum_should_match: 1
+        }
+    };
+
+    return cleanQuery(queryBody);
+}
+
 module.exports = {
     shouldMatchLemmaAndText,
     tokenizeQuery,
@@ -331,5 +598,9 @@ module.exports = {
     getNoSpeakerMessage,
     getAgendaTitle,
     buildHtmlElement,
-    buildQueryBody
+    buildQueryBody,
+    wordsSearchQueryBuilder,
+    sentencesCoordinatesQueryBuilder,
+    phrasesSearchQueryBuilder,
+    wordsInPhrasesSearchQueryBuilder
 }

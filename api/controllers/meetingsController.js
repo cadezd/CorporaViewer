@@ -1,8 +1,8 @@
 require('dotenv').config();
 const esClient = require('../../services/elasticsearch');
-const async = require('async');
-const utils = require('../utils/utils');
-const mockDb = require('../utils/mockDb');
+const utils = require('./utils/utils');
+const ASCIIFolder = require("fold-to-ascii");
+const searchStrategieSelector = require('./strategies/searchStrategieSelector');
 
 /**
  * Retrieves all meetings based on the provided filters and pagination. Does not use pit.
@@ -220,7 +220,6 @@ const getPage = async (req, res) => {
  */
 const getMeetingAsText = async (req, res) => {
     const meetingId = req.query.meetingId
-    // TODO: rename variable so that it is clear what is the purpose of the variable
     const lang = req.query.lang
     const pageLang = lang || req.query.pageLang
 
@@ -248,9 +247,13 @@ const getMeetingAsText = async (req, res) => {
 
     // aggregate sentences into segments
     let segments = sentences.reduce((segments, sentence) => {
+
         const segment_id = sentence.segment_id.split("seg")[1];
+
         if (!segments[segment_id]) segments[segment_id] = {sentences: [], speaker: sentence.speaker};
+
         segments[segment_id].sentences.push(sentence);
+
         return segments;
     }, {});
 
@@ -295,12 +298,9 @@ const getMeetingAsText = async (req, res) => {
     })
 
     text = title
-        + "<h3 class='agendas-title'>" + utils.getAgendaTitle(pageLang) + "</h3><div class='agendas'>"
-        + agendas
-        + "</div>"
-        + "<div class='segment'>"
-        + content.join("<div class='segment'></div>")
-        + "</div>";
+        + "<h3 class='agendas-title'>" + utils.getAgendaTitle(pageLang) + "</h3>"
+        + "<div class='agendas'>" + agendas + "</div>"
+        + "<div class='segment'>" + content.join("<div class='segment'></div>") + "</div>";
 
     res.json({
         text: text
@@ -309,18 +309,29 @@ const getMeetingAsText = async (req, res) => {
 
 
 const getWordsToHighlight = async (req, res) => {
-    const meetingId = req.params.meetingId;
-    const words = req.query.words;
-    const language = req.query.language;
+    const meetingId = req.query.meetingId;
+    const query = req.query.words;
+    const speaker = req.query.speaker;
+    const lang = req.query.lang;
+
+    // Separate the query into words and phrases
+    const tokens = utils.tokenizeQuery(query).map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())));
+    const words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
+    const phrases = tokens.filter(token => token.length > 1);
+
+    // Get appropriate strategy based on the language
+    const searchStrategy = searchStrategieSelector(lang);
 
     try {
-        // Simulate a request to Elastic search database
-        const response = await mockDb.getWordsToHighlight(meetingId, words, language);
+        // Execute search using the chosen strategy and process the response
+        const { singleWordsResponse, phrasesResponse } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang);
+        const singleWordsHighlights = await searchStrategy.processSingleWordsResponse(singleWordsResponse, esClient, meetingId);
+        const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, phrases, esClient, meetingId);
 
-        res.json(response);
+        res.json({ words: words, phrases: phrases, highlights: [...singleWordsHighlights, ...phrasesHighlights] });
     } catch (error) {
         console.error(error);
-        res.status(500).json({error: "Internal server error"});
+        res.status(500).json({ error: `Internal server error` });
     }
 }
 
