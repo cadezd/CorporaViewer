@@ -34,6 +34,7 @@ class BaseSearchStrategy {
 
     /**
      * Applies additional processing to the response (such as getting coordinates of a sentence that contains the non-original phrase)
+     * and getting the words that are in the searched phrase out of the original sentences.
      *
      * @param {JSON[]} phrasesResponse
      * @param {string[][]} phrases
@@ -51,70 +52,52 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
 
     async search(esClient, meetingId, words, phrases, speaker, lang) {
 
-        const promises = [];
+        const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, undefined);
+        const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, undefined);
 
-        console.log(phrases)
+        const promises = [
+            esClient.search({
+                index: process.env.WORDS_INDEX_NAME || "words-index",
+                body: {
+                    query: singleWordsQueryBody,
+                },
+                size: 1000
+            }),
+            esClient.search({
+                index: process.env.SENTENCES_INDEX_NAME || "sentences-index",
+                min_score: 0.5,
+                body: {
+                    query: phrasesQueryBody,
+                },
+                size: 1000
+            })
+        ];
 
-        // TODO: rewrite with promise allSettled
+        const responses = await Promise.allSettled(promises);
 
-        if (words && words.length > 0) {
-            const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, undefined);
-            promises.push(
-                esClient.search({
-                    index: process.env.WORDS_INDEX_NAME || "words-index",
-                    body: {
-                        query: singleWordsQueryBody,
-                    },
-                    size: 1000
-                })
-            );
-        }
-
-        if (phrases && phrases.length > 0) {
-            const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, undefined);
-            promises.push(
-                esClient.search({
-                    index: process.env.SENTENCES_INDEX_NAME || "sentences-index",
-                    min_score: 0.5,
-                    body: {
-                        query: phrasesQueryBody,
-                    },
-                    size: 1000
-                })
-            );
-        }
-
-        const responses = await Promise.all(promises);
-
-        let singleWordsResponse = undefined;
-        let phrasesResponse = undefined;
-
-        if (responses.length === 1) {
-            singleWordsResponse = (words && words.length > 0) ? responses[0] : undefined;
-            phrasesResponse = (phrases && phrases.length > 0) ? responses[0] : undefined;
-        } else {
-            singleWordsResponse = responses[0];
-            phrasesResponse = responses[1];
-        }
+        const singleWordsResponse = responses[0].status === "fulfilled" ? responses[0].value : undefined;
+        const phrasesResponse = responses[1].status === "fulfilled" ? responses[1].value : undefined;
 
         return {singleWordsResponse, phrasesResponse};
     }
 
     async processSingleWordsResponse(singleWordsResponse, esClient, meetingId) {
+
         // Return empty array if there are no words to process
         if (!singleWordsResponse)
             return [];
 
-        // For non-original words (names excluded), we need to get the coordinates of the UNIQUE whole sentence that contains them
-        const nonOriginalWordsSentencesIds = singleWordsResponse.hits.hits
+        // For translated words (names excluded), we collect the (UNIQUE) ids of the sentences that contain them
+        // We will use these ids to get the coordinates of the sentences that contain the translated words
+        const translatedWordsSentencesIds = singleWordsResponse.hits.hits
             .filter(hit => hit._source.original !== 1 && hit._source.propn !== 1)
             .map(hit => hit._source.sentence_id)
             .filter((value, index, self) => self.indexOf(value) === index);
 
-        // We only get the coordinates of the original words that are not included in the sentences of the non-original words
+        // We collect the original words
         const originalWords = singleWordsResponse.hits.hits
             .filter(hit => hit._source.original === 1)
-            .filter(hit => !nonOriginalWordsSentencesIds.includes(hit._source.sentence_id))
+            .filter(hit => !translatedWordsSentencesIds.includes(hit._source.sentence_id))
             .map(hit => ({
                 id: hit._source.word_id,
                 text: hit._source.text,
@@ -122,22 +105,22 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 coordinates: hit._source.coordinates,
             }));
 
-        const sentencesCoordinatesQueryBody = utils.sentencesCoordinatesQueryBuilder(meetingId, nonOriginalWordsSentencesIds);
-        const sentencesCoordinatesResponse = await esClient.search({
+        // Fetch the data for sentences that contain the translated words
+        const translatedSentencesQueryBody = utils.sentencesCoordinatesQueryBuilder(meetingId, translatedWordsSentencesIds);
+        const translatedSentencesResponse = await esClient.search({
             index: "sentences-index",
             body: {
-                query: sentencesCoordinatesQueryBody,
+                query: translatedSentencesQueryBody,
             },
             size: 10000
         });
-
-        const sentencesCoordinates = sentencesCoordinatesResponse.hits.hits.map(hit => ({
+        const translatedSentences = translatedSentencesResponse.hits.hits.map(hit => ({
             id: hit._source.sentence_id,
-            translations: hit._source.translations,
+            text: hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text),
             coordinates: hit._source.coordinates,
         }));
 
-        return [...originalWords, ...sentencesCoordinates];
+        return [...originalWords, ...translatedSentences];
     }
 
     async processPhrasesResponse(phrasesResponse, phrases, esClient, meetingId) {
@@ -156,11 +139,16 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 coordinates: hit._source.coordinates,
             }));
 
+
         // Save the ids of the original phrases sentences that contain original phrases
         const originalPhrasesSentencesIds = phrasesResponse.hits.hits
             .filter(hit => hit.inner_hits.matched_translation.hits.hits[0]._source.original === 1)
             .filter(hit => !nonOriginalPhrasesSentences.map(sentence => sentence.id).includes(hit._source.sentence_id))
             .map(hit => hit._source.sentence_id);
+
+        if (originalPhrasesSentencesIds.length === 0) {
+            return [...nonOriginalPhrasesSentences];
+        }
 
         const promises = [];
         for (const phrase of phrases) {
@@ -204,11 +192,11 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 continue;
             }
 
-            const result = responses[i];
+            const result = responses[i].value;
             const searchedPhrase = phrases[i];
 
             // Group the words by sentence_id
-            const originalPhrasesWords = result.value.aggregations.group_by_sentence_id.buckets
+            const originalPhrasesWords = result.aggregations.group_by_sentence_id.buckets
                 .map(bucket => ({
                     id: bucket.key.sentence_id,
                     words: bucket.top_words.hits.hits.map(hit => ({
@@ -233,7 +221,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 for (let k = 0; k < phraseWordsTexts.length - searchedPhrase.length; k++) {
                     const window = phraseWordsTexts.slice(k, k + searchedPhrase.length);
 
-
+                    // TODO: popravi da se
                     if (this.arraysEqual(window, searchedPhrase) ) {
                         slidingWindowStart = k;
                         slidingWindowEnd = k + searchedPhrase.length;
@@ -250,7 +238,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             originalPhrasesWordsResult.push(...originalPhrasesWords);
         }
 
-        return [...originalPhrasesWordsResult, ...originalPhrasesWordsResult];
+        return [...nonOriginalPhrasesSentences, ...originalPhrasesWordsResult];
     }
 
     arraysEqual(arr1, arr2) {
@@ -277,12 +265,21 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
         });
     }
 
-    // TODO: add description
-    async processResponse(response, esClient, meetingId) {
+    // TODO: implement
+    async processSingleWordsResponse(response, esClient, meetingId) {
         return response.hits.hits.map(hit => ({
             id: hit._source.word_id,
             text: hit._source.text,
             lemma: hit._source.lemma,
+            coordinates: hit._source.coordinates,
+        }));
+    }
+
+    // TODO: implement
+    async processPhrasesResponse(phrasesResponse, phrases, esClient, meetingId) {
+        return phrasesResponse.hits.hits.map(hit => ({
+            id: hit._source.sentence_id,
+            text: hit.inner_hits.matched_translation.hits.hits.map(hit => hit._source.text),
             coordinates: hit._source.coordinates,
         }));
     }
