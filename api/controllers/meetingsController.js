@@ -308,7 +308,7 @@ const getMeetingAsText = async (req, res) => {
 }
 
 
-const getWordsToHighlight = async (req, res) => {
+const getHighlights = async (req, res) => {
     const meetingId = req.query.meetingId;
     const query = req.query.words;
     const speaker = req.query.speaker;
@@ -338,6 +338,6 @@ const getWordsToHighlight = async (req, res) => {
 
 module.exports = {
     getMeetingAsText,
-    getWordsToHighlight,
+    getHighlights,
     getPage
 };
