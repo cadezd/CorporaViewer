@@ -391,7 +391,7 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang) => {
             filter: [
                 {
                     term: {
-                        "meeting_id.keyword": meetingId
+                        "meeting_id": meetingId
                     }
                 },
                 speakerFilter,
@@ -420,12 +420,12 @@ const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
             filter: [
                 {
                     term: {
-                        "meeting_id.keyword": meetingId
+                        "meeting_id": meetingId
                     }
                 },
                 {
                     terms: {
-                        "sentence_id.keyword": sentencesIds
+                        "sentence_id": sentencesIds
                     }
                 }
             ]
@@ -497,7 +497,7 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
             filter: [
                 {
                     term: {
-                        "meeting_id.keyword": meetingId
+                        "meeting_id": meetingId
                     }
                 },
                 speakerFilter,
@@ -530,59 +530,37 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
 
 /**
  *
- * @param {string} meetingId
- * @param {string[]} phrase
- * @param {string[]} sentencesIds
+ * @param {string} text - The text to search for <em> tags
+ * @returns {number[]} - The indexes of the words wrapped in <em> tags in the text
  */
-const wordsInPhrasesSearchQueryBuilder = (meetingId, phrase, sentencesIds) => {
+const getEmTagIndexes = (text) => {
 
-    if (!meetingId)
-        return {};
+    // Remove all non-alphanumeric characters except <em> and </em> tags
+    let sanitizedText = text.replace(/(?![<\/?em>])[^\p{L}\p{N}\s]/gu, "");
 
-    if (!phrase || phrase.length === 0)
-        return {};
+    const emTagPattern = /<em>.*?<\/em>/gu; // Pattern to match <em> tags
+    const punctuationRegex = /[\p{P}]/gu; // Regex to match punctuation characters except .
+    let indexes = [];
+    let wordIndex = -1;
+    let match;
 
-    if (!sentencesIds || sentencesIds.length === 0)
-        return {};
+    while ((match = emTagPattern.exec(sanitizedText)) !== null) {
 
+        // Count the words before the match and add it to the indexes
+        let wordsBefore = sanitizedText.substring(0, match.index).split(/\s+/).filter(word => word.length > 0);
+        wordsBefore = wordsBefore.filter(word => !word.match(punctuationRegex));
 
-    const wordsInPhrasesFilters = phrase.map(word => {
-        return {
-            fuzzy: {
-                text: {
-                    value: word,
-                    fuzziness: "AUTO:5,10"
-                }
-            }
-        }
-    });
+        wordIndex += Math.max(0, wordsBefore.length) + 1;
+        indexes.push(wordIndex);
 
-    let queryBody = {
-        bool: {
-            filter: [
-                {
-                    term: {
-                        "meeting_id.keyword": meetingId
-                    }
-                },
-                {
-                    terms: {
-                        "sentence_id.keyword": sentencesIds
-                    }
-                },
-                {
-                    term: {
-                        "original": 1
-                    }
-                }
-            ],
-            should: wordsInPhrasesFilters,
-            minimum_should_match: 1
-        }
-    };
+        // Remove the matched part from the text to continue search and reset the regex index
+        sanitizedText = sanitizedText.slice(match.index + match[0].length);
+        emTagPattern.lastIndex = 0;
+    }
 
-    return cleanQuery(queryBody);
+    return indexes;
 }
+
 
 module.exports = {
     shouldMatchLemmaAndText,
@@ -602,5 +580,5 @@ module.exports = {
     wordsSearchQueryBuilder,
     sentencesCoordinatesQueryBuilder,
     phrasesSearchQueryBuilder,
-    wordsInPhrasesSearchQueryBuilder
+    getEmTagIndexes
 }
