@@ -314,7 +314,7 @@ const getHighlights = async (req, res) => {
     const speaker = req.query.speaker;
     const lang = req.query.lang;
 
-    // Separate the query into words and phrases
+    // Tokenize the query and separate it into words and phrases
     const tokens = utils.tokenizeQuery(query)
         .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
         .map(tokens => tokens.map(token => token.replaceAll(/[^a-zA-Z0-9]/g, '')))
