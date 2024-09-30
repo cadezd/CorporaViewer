@@ -315,7 +315,10 @@ const getHighlights = async (req, res) => {
     const lang = req.query.lang;
 
     // Separate the query into words and phrases
-    const tokens = utils.tokenizeQuery(query).map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())));
+    const tokens = utils.tokenizeQuery(query)
+        .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
+        .map(tokens => tokens.map(token => token.replaceAll(/[^a-zA-Z0-9]/g, '')))
+        .map(tokens => tokens.filter(token => token.length > 0));
     const words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
     const phrases = tokens.filter(token => token.length > 1);
 
@@ -324,14 +327,17 @@ const getHighlights = async (req, res) => {
 
     try {
         // Execute search using the chosen strategy and process the response
-        const { singleWordsResponse, phrasesResponse } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang);
+        const {
+            singleWordsResponse,
+            phrasesResponse
+        } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang);
         const singleWordsHighlights = await searchStrategy.processSingleWordsResponse(singleWordsResponse, esClient, meetingId);
-        const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, phrases, esClient, meetingId);
+        const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, esClient, meetingId);
 
-        res.json({ words: words, phrases: phrases, highlights: [...singleWordsHighlights, ...phrasesHighlights] });
+        res.json({words: words, phrases: phrases, highlights: [...singleWordsHighlights, ...phrasesHighlights]});
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: `Internal server error` });
+        res.status(500).json({error: `Internal server error`});
     }
 }
 
