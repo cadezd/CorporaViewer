@@ -1,6 +1,5 @@
 require('dotenv').config();
 const utils = require("../utils/utils");
-const ASCIIFolder = require("fold-to-ascii");
 
 class BaseSearchStrategy {
     /**
@@ -26,7 +25,7 @@ class BaseSearchStrategy {
      * @param {JSON[]} singleWordsResponse
      * @param {Client} esClient - Elasticsearch client
      * @param {string} meetingId - ID of the meeting
-     * @returns {JSON[{id, coordinates}]}
+     * @returns {JSON[{ids, coordinates}]}
      */
     async processSingleWordsResponse(singleWordsResponse, esClient, meetingId) {
         throw new Error("processResponse() method must be implemented.");
@@ -37,12 +36,11 @@ class BaseSearchStrategy {
      * and getting the words that are in the searched phrase out of the original sentences.
      *
      * @param {JSON[]} phrasesResponse
-     * @param {string[][]} phrases
-     * @param {Client} esClient
-     * @param {string} meetingId
-     * @returns {JSON[{id, coordinates}]}
+     * @param {Client} esClient - Elasticsearch client
+     * @param {string} meetingId  - ID of the meeting
+     * @returns {JSON[{ids, coordinates}]}
      */
-    async processPhrasesResponse(phrasesResponse, phrases, esClient, meetingId) {
+    async processPhrasesResponse(phrasesResponse, esClient, meetingId) {
         throw new Error("processResponse() method must be implemented.");
     }
 }
@@ -65,11 +63,18 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             }),
             esClient.search({
                 index: process.env.SENTENCES_INDEX_NAME || "sentences-index",
-                min_score: 0.5,
+                min_score: 1,
                 body: {
                     query: phrasesQueryBody,
                 },
-                size: 1000
+                size: 1000,
+                highlight: {
+                    number_of_fragments: 0,
+                    fragment_size: 10000,
+                    fields: {
+                        "translations.text": {}
+                    }
+                }
             })
         ];
 
@@ -90,18 +95,18 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
         // For translated words (names excluded), we collect the (UNIQUE) ids of the sentences that contain them
         // We will use these ids to get the coordinates of the sentences that contain the translated words
         const translatedWordsSentencesIds = singleWordsResponse.hits.hits
-            .filter(hit => hit._source.original !== 1 && hit._source.propn !== 1)
+            .filter(hit => hit._source.original === 0 && hit._source.propn !== 1)
             .map(hit => hit._source.sentence_id)
             .filter((value, index, self) => self.indexOf(value) === index);
 
         // We collect the original words
         const originalWords = singleWordsResponse.hits.hits
-            .filter(hit => hit._source.original === 1)
+            .filter(hit => hit._source.original === 1 || hit._source.propn === 1)
             .filter(hit => !translatedWordsSentencesIds.includes(hit._source.sentence_id))
             .map(hit => ({
-                id: hit._source.word_id,
-                text: hit._source.text,
-                lemma: hit._source.lemma,
+                ids: [hit._source.word_id],
+                //texts: [hit._source.text],
+                //lemmas: [hit._source.lemma],
                 coordinates: hit._source.coordinates,
             }));
 
@@ -115,139 +120,93 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             size: 10000
         });
         const translatedSentences = translatedSentencesResponse.hits.hits.map(hit => ({
-            id: hit._source.sentence_id,
-            text: hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text),
+            ids: [hit._source.sentence_id],
+            //texts: [hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text)],
             coordinates: hit._source.coordinates,
         }));
 
         return [...originalWords, ...translatedSentences];
     }
 
-    async processPhrasesResponse(phrasesResponse, phrases, esClient, meetingId) {
+    async processPhrasesResponse(phrasesResponse, esClient, meetingId) {
 
         // Return empty array if there are no phrases to process
         if (!phrasesResponse)
             return [];
 
-        // For non-original phrases, we need to get the coordinates of the UNIQUE whole sentence that contains them
-        const nonOriginalPhrasesSentences = phrasesResponse.hits.hits
-            .filter(hit => hit.inner_hits.matched_translation.hits.hits[0]._source.original !== 1)
-            .filter((value, index, self) => self.indexOf(value) === index)
+        // For translated phrases, we collect the data of the sentences that contains them
+        const translatedSentences = phrasesResponse.hits.hits
+            .filter(hit => hit.inner_hits.matched_translation.hits.hits[0]._source.original === 0)
             .map(hit => ({
-                id: hit._source.sentence_id,
-                text: hit.inner_hits.matched_translation.hits.hits.map(hit => hit._source.text),
+                ids: [hit._source.sentence_id],
+                //texts: [hit.inner_hits.matched_translation.hits.hits.map(hit => hit._source.text)],
                 coordinates: hit._source.coordinates,
             }));
 
-
-        // Save the ids of the original phrases sentences that contain original phrases
-        const originalPhrasesSentencesIds = phrasesResponse.hits.hits
+        // For original phrases, we collect the data of the sentences id and highlights (text that shows the matched words - wrapped in <em> tags)
+        const originalSentencesIdsAndHighlights = phrasesResponse.hits.hits
             .filter(hit => hit.inner_hits.matched_translation.hits.hits[0]._source.original === 1)
-            .filter(hit => !nonOriginalPhrasesSentences.map(sentence => sentence.id).includes(hit._source.sentence_id))
-            .map(hit => hit._source.sentence_id);
+            .map(hit => ({
+                id: hit._source.sentence_id,
+                highlight: hit.highlight["translations.text"][0]
+            }));
 
-        if (originalPhrasesSentencesIds.length === 0) {
-            return [...nonOriginalPhrasesSentences];
-        }
-
+        // For each original sentence that contains searched phrase, we create a query to get the words that are highlighted in the sentence
         const promises = [];
-        for (const phrase of phrases) {
-            // Query body to get the words that are in searched phrase out of the original sentences
-            const phraseWordsQueryBody = utils.wordsInPhrasesSearchQueryBuilder(meetingId, phrase, originalPhrasesSentencesIds);
+        for (const originalSentenceIdAndHighlights of originalSentencesIdsAndHighlights) {
+            const sentenceId = originalSentenceIdAndHighlights.id;
+            const highlightedWords = originalSentenceIdAndHighlights.highlight;
+            const highlightedWordsPositions = utils.getEmTagIndexes(highlightedWords);
+
+            const queryBody = {
+                bool: {
+                    filter: [
+                        {
+                            term: {
+                                "sentence_id": sentenceId
+                            }
+                        },
+                        {
+                            term: {
+                                original: 1
+                            }
+                        },
+                        {
+                            terms: {
+                                wpos: highlightedWordsPositions
+                            }
+                        }
+                    ]
+                }
+            }
 
             promises.push(esClient.search({
                 index: process.env.WORDS_INDEX_NAME || "words-index",
                 body: {
-                    query: phraseWordsQueryBody,
+                    query: queryBody,
                 },
-                size: 0,
-                aggs: {
-                    group_by_sentence_id: {
-                        composite: {
-                            size: 1000,
-                            sources: [
-                                {sentence_id: {terms: {field: "sentence_id"}}}
-                            ]
-                        },
-                        aggregations: {
-                            top_words: {
-                                top_hits: {
-                                    sort: [{pos: {order: "asc"}}],
-                                    size: 100
-                                }
-                            }
-                        }
-                    }
-                }
+                size: 10000
             }));
         }
 
+        // Fetch the data for the words that are highlighted in the original sentences
         const responses = await Promise.allSettled(promises);
+        const originalWords = responses
+            .filter(response => response.status === "fulfilled")
+            .map(response => response.value.hits.hits
+                .reduce((acc, hit) => {
+                        acc.ids.push(hit._source.word_id);
+                        //acc.texts.push(hit._source.text);
+                        //acc.lemmas.push(hit._source.lemma);
+                        acc.coordinates.push(...hit._source.coordinates);
+                        return acc;
+                    }, {ids: [], /*texts: [], lemmas: [],*/ coordinates: []}
+                )
+            );
 
-        let originalPhrasesWordsResult = [];
-        for (let i = 0; i < responses.length; i++) {
-
-            if (responses[i].status === "rejected") {
-                console.log(responses[i].reason);
-                continue;
-            }
-
-            const result = responses[i].value;
-            const searchedPhrase = phrases[i];
-
-            // Group the words by sentence_id
-            const originalPhrasesWords = result.aggregations.group_by_sentence_id.buckets
-                .map(bucket => ({
-                    id: bucket.key.sentence_id,
-                    words: bucket.top_words.hits.hits.map(hit => ({
-                        id: hit._source.word_id,
-                        pos: hit._source.pos,
-                        text: hit._source.text,
-                        lemma: hit._source.lemma,
-                        coordinates: hit._source.coordinates,
-                    }))
-                }))
-                .filter(phrase => phrase.words.length >= searchedPhrase.length);
-
-
-            // get only those words that are in the searched phrase in the correct order (suing sliding window)
-            let slidingWindowStart = 0;
-            let slidingWindowEnd = 0;
-
-            for(let j = 0; j < originalPhrasesWords.length; j++) {
-                const phraseWords = originalPhrasesWords[j];
-                const phraseWordsTexts = phraseWords.words.map(word => ASCIIFolder.foldReplacing(word.text.toLowerCase()));
-
-                for (let k = 0; k < phraseWordsTexts.length - searchedPhrase.length; k++) {
-                    const window = phraseWordsTexts.slice(k, k + searchedPhrase.length);
-
-                    // TODO: popravi da se
-                    if (this.arraysEqual(window, searchedPhrase) ) {
-                        slidingWindowStart = k;
-                        slidingWindowEnd = k + searchedPhrase.length;
-                        phraseWords.words = phraseWords.words.slice(slidingWindowStart, slidingWindowEnd);
-                        console.log("Found phrase: ", searchedPhrase);
-                        console.log("Window: ", window);
-                        console.log("Phrase Words: ", phraseWordsTexts);
-                        console.log("Coordinates: ", phraseWords.words.map(word => word.coordinates));
-                        break;
-                    }
-                }
-            }
-
-            originalPhrasesWordsResult.push(...originalPhrasesWords);
-        }
-
-        return [...nonOriginalPhrasesSentences, ...originalPhrasesWordsResult];
+        return [...translatedSentences, ...originalWords];
     }
 
-    arraysEqual(arr1, arr2) {
-        if (arr1.length !== arr2.length) return false; // Check if lengths are different
-        for (let i = 0; i < arr1.length; i++) {
-            if (arr1[i] !== arr2[i]) return false; // Check if elements at each position are different
-        }
-        return true; // Arrays are equal
-    }
 }
 
 class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
