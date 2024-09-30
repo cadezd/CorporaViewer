@@ -1,6 +1,7 @@
 require('dotenv').config();
 const utils = require("../utils/utils");
 
+
 class BaseSearchStrategy {
     /**
      * Searches for the words and phrases of a meeting in given language that satisfy the search criteria.
@@ -10,48 +11,14 @@ class BaseSearchStrategy {
      * @param {string[]} words - single words to search for
      * @param {string[][]} phrases -  words to search for in a sentence
      * @param {string|undefined} speaker - name of the speaker
-     * @param {string} lang - language of the words to search for, if undefined, search in the original language
-     * @returns {{ wordsResponse, phrasesResponse }}
+     * @param {string|undefined} lang - language of the words to search for, if undefined, search in the original language
+     * @returns {Promise<{ SingleWordsResponse, PhrasesResponse }>}
      */
 
     async search(esClient, meetingId, words, phrases, speaker, lang) {
-        throw new Error("searchWords() method must be implemented.");
-    }
 
-    /**
-     * Applies additional processing to the response (such as getting coordinates of a sentence that contains the non-original word)
-     * and returns id and coordinates of the words and sentences that satisfy the search criteria.
-     *
-     * @param {JSON[]} singleWordsResponse
-     * @param {Client} esClient - Elasticsearch client
-     * @param {string} meetingId - ID of the meeting
-     * @returns {JSON[{ids, coordinates}]}
-     */
-    async processSingleWordsResponse(singleWordsResponse, esClient, meetingId) {
-        throw new Error("processResponse() method must be implemented.");
-    }
-
-    /**
-     * Applies additional processing to the response (such as getting coordinates of a sentence that contains the non-original phrase)
-     * and getting the words that are in the searched phrase out of the original sentences.
-     *
-     * @param {JSON[]} phrasesResponse
-     * @param {Client} esClient - Elasticsearch client
-     * @param {string} meetingId  - ID of the meeting
-     * @returns {JSON[{ids, coordinates}]}
-     */
-    async processPhrasesResponse(phrasesResponse, esClient, meetingId) {
-        throw new Error("processResponse() method must be implemented.");
-    }
-}
-
-
-class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
-
-    async search(esClient, meetingId, words, phrases, speaker, lang) {
-
-        const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, undefined);
-        const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, undefined);
+        const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang);
+        const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang);
 
         const promises = [
             esClient.search({
@@ -59,7 +26,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 body: {
                     query: singleWordsQueryBody,
                 },
-                size: 1000
+                size: 10000
             }),
             esClient.search({
                 index: process.env.SENTENCES_INDEX_NAME || "sentences-index",
@@ -67,7 +34,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 body: {
                     query: phrasesQueryBody,
                 },
-                size: 1000,
+                size: 10000,
                 highlight: {
                     number_of_fragments: 0,
                     fragment_size: 10000,
@@ -85,6 +52,36 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
 
         return {singleWordsResponse, phrasesResponse};
     }
+
+    /**
+     * Applies additional processing to the response (such as getting coordinates of a sentence that contains the non-original word)
+     * and returns id and coordinates of the words and sentences that satisfy the search criteria.
+     *
+     * @param {SingleWordsResponse} singleWordsResponse
+     * @param {Client} esClient - Elasticsearch client
+     * @param {string} meetingId - ID of the meeting
+     * @returns {Promise<Highlight[]>}
+     */
+    async processSingleWordsResponse(singleWordsResponse, esClient, meetingId) {
+        throw new Error("processResponse() method must be implemented.");
+    }
+
+    /**
+     * Applies additional processing to the response (such as getting coordinates of a sentence that contains the non-original phrase)
+     * and getting the words that are in the searched phrase out of the original sentences.
+     *
+     * @param {PhrasesResponse} phrasesResponse
+     * @param {Client} esClient - Elasticsearch client
+     * @param {string} meetingId  - ID of the meeting
+     * @returns {Promise<Highlight[]>}
+     */
+    async processPhrasesResponse(phrasesResponse, esClient, meetingId) {
+        throw new Error("processResponse() method must be implemented.");
+    }
+}
+
+
+class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
 
     async processSingleWordsResponse(singleWordsResponse, esClient, meetingId) {
 
@@ -211,36 +208,91 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
 
 class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
 
+    async processSingleWordsResponse(singleWordsResponse, esClient, meetingId) {
 
-    async search(esClient, meetingId, words, phrases, speaker, lang) {
-        const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang);
+        // Return empty array if there are no words to process
+        if (!singleWordsResponse)
+            return [];
 
-        return await esClient.search({
-            index: process.env.WORDS_INDEX_NAME || "words-index",
-            body: {
-                query: singleWordsQueryBody,
-            },
-            size: 10000
-        });
+        // Return matched words in the translated language (we do not search in other translations when lang is specified)
+        return singleWordsResponse.hits.hits
+            .map(hit => ({
+                ids: [hit._source.word_id],
+                text: hit._source.text,
+                lemma: hit._source.lemma,
+                coordinates: [],
+            }));
     }
 
-    // TODO: implement
-    async processSingleWordsResponse(response, esClient, meetingId) {
-        return response.hits.hits.map(hit => ({
-            id: hit._source.word_id,
-            text: hit._source.text,
-            lemma: hit._source.lemma,
-            coordinates: hit._source.coordinates,
-        }));
-    }
 
-    // TODO: implement
-    async processPhrasesResponse(phrasesResponse, phrases, esClient, meetingId) {
-        return phrasesResponse.hits.hits.map(hit => ({
-            id: hit._source.sentence_id,
-            text: hit.inner_hits.matched_translation.hits.hits.map(hit => hit._source.text),
-            coordinates: hit._source.coordinates,
-        }));
+    async processPhrasesResponse(phrasesResponse, esClient, meetingId) {
+
+        // Return empty array if there are no phrases to process
+        if (!phrasesResponse)
+            return [];
+
+        // Collect the data of the sentences id and highlights (text that shows the matched words - wrapped in <em> tags)
+        const sentencesIdsHighlightsLang = phrasesResponse.hits.hits
+            .map(hit => ({
+                id: hit._source.sentence_id,
+                highlight: hit.highlight["translations.text"][0],
+                language: hit.inner_hits.matched_translation.hits.hits[0]._source.lang
+            }));
+
+
+        // For each sentence that contains searched phrase, we create a query to get the words that are highlighted in the sentence
+        const promises = [];
+        for (const sentenceIdHighlightsLang of sentencesIdsHighlightsLang) {
+            const sentenceId = sentenceIdHighlightsLang.id;
+            const highlightedWords = sentenceIdHighlightsLang.highlight;
+            const highlightedWordsPositions = utils.getEmTagIndexes(highlightedWords);
+            const lang = sentenceIdHighlightsLang.language;
+
+            const queryBody = {
+                bool: {
+                    filter: [
+                        {
+                            term: {
+                                "sentence_id": sentenceId
+                            }
+                        },
+                        {
+                            term: {
+                                lang: lang
+                            }
+                        },
+                        {
+                            terms: {
+                                wpos: highlightedWordsPositions
+                            }
+                        }
+                    ]
+                }
+            }
+
+            promises.push(esClient.search({
+                index: process.env.WORDS_INDEX_NAME || "words-index",
+                body: {
+                    query: queryBody,
+                },
+                size: 10000
+            }));
+        }
+
+        // Fetch the data for the words that are highlighted in the original sentences
+        const responses = await Promise.allSettled(promises);
+
+        return responses
+            .filter(response => response.status === "fulfilled")
+            .map(response => response.value.hits.hits
+                .reduce((acc, hit) => {
+                        acc.ids.push(hit._source.word_id);
+                        //acc.texts.push(hit._source.text);
+                        //acc.lemmas.push(hit._source.lemma);
+                        return acc;
+                    }, {ids: [], /*texts: [], lemmas: [],*/ coordinates: []}
+                )
+            );
     }
 }
 
