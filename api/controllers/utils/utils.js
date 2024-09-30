@@ -457,11 +457,15 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
         };
     }
 
-    let langFilter;
+    let langFilter = {
+        term: {
+            "translations.original": 1
+        }
+    };
     if (lang) {
         langFilter = {
             term: {
-                "lang": lang
+                "translations.lang": lang
             }
         };
     }
@@ -501,7 +505,6 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
                     }
                 },
                 speakerFilter,
-                langFilter
             ],
             should: [
                 {
@@ -509,6 +512,9 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
                         path: "translations",
                         query: {
                             bool: {
+                                filter: [
+                                  langFilter
+                                ],
                                 should: phrasesFilters,
                                 minimum_should_match: 1
                             }
