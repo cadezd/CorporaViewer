@@ -2,7 +2,7 @@ require('dotenv').config();
 const esClient = require('../../services/elasticsearch');
 const utils = require('./utils/utils');
 const ASCIIFolder = require("fold-to-ascii");
-const searchStrategieSelector = require('./strategies/searchStrategieSelector');
+const searchStrategiesSelector = require('./strategies/searchStrategieSelector');
 
 /**
  * Retrieves all meetings based on the provided filters and pagination. Does not use pit.
@@ -313,6 +313,7 @@ const getHighlights = async (req, res) => {
     const query = req.query.words;
     const speaker = req.query.speaker;
     const lang = req.query.lang;
+    const looseSearch = req.query.looseSearch === "true";
 
     // Tokenize the query and separate it into words and phrases
     const tokens = utils.tokenizeQuery(query)
@@ -323,14 +324,14 @@ const getHighlights = async (req, res) => {
     const phrases = tokens.filter(token => token.length > 1);
 
     // Get appropriate strategy based on the language
-    const searchStrategy = searchStrategieSelector(lang);
+    const searchStrategy = searchStrategiesSelector(lang);
 
     try {
         // Execute search using the chosen strategy and process the response
         const {
             singleWordsResponse,
             phrasesResponse
-        } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang);
+        } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang, looseSearch);
         const singleWordsHighlights = await searchStrategy.processSingleWordsResponse(singleWordsResponse, esClient, meetingId);
         const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, esClient, meetingId);
 

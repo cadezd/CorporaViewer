@@ -12,13 +12,14 @@ class BaseSearchStrategy {
      * @param {string[][]} phrases -  words to search for in a sentence
      * @param {string|undefined} speaker - name of the speaker
      * @param {string|undefined} lang - language of the words to search for, if undefined, search in the original language
+     * @param {boolean} looseSearch - if true, apply fuzzy search
      * @returns {Promise<{ SingleWordsResponse, PhrasesResponse }>}
      */
 
-    async search(esClient, meetingId, words, phrases, speaker, lang) {
+    async search(esClient, meetingId, words, phrases, speaker, lang, looseSearch) {
 
-        const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang);
-        const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang);
+        const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang, looseSearch);
+        const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang, looseSearch);
 
         const promises = [
             esClient.search({
@@ -37,7 +38,6 @@ class BaseSearchStrategy {
                 size: 10000,
                 highlight: {
                     number_of_fragments: 0,
-                    fragment_size: 10000,
                     fields: {
                         "translations.text": {}
                     }
