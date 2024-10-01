@@ -337,15 +337,16 @@ const buildQueryBody = (words, placeNames, speaker, filters) => {
 
 
 /**
- * Builds the query body for searching words in meeting with given id and other filters.
+ * Returns the query body for searching words in meeting with given id and other filters or an empty object if the meeting id or words are not provided.
  *
  * @param {string} meetingId - The id of the meeting.
  * @param {string[]} words - The words to search for in the meeting.
  * @param {string|undefined} speaker - The speaker who spoke the words (optional).
  * @param {string|undefined} lang - The language of the words (optional), if undefined, defaults to original language.
+ * @param {boolean} looseSearch - Whether to allow some fuzziness in the search.
  * @returns {{bool: {filter: [{term: {meeting_id}},{term: {speaker}}], should: *[], minimum_should_match: number}} | {}} - The query body for searching words in the meeting.
  */
-const wordsSearchQueryBuilder = (meetingId, words, speaker, lang) => {
+const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) => {
     if (!meetingId)
         return {};
 
@@ -379,7 +380,7 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang) => {
                 type: "best_fields",
                 fields: ["text", "lemma"],
                 minimum_should_match: 1,
-                fuzziness: "AUTO:5,10"
+                fuzziness: (looseSearch) ? "AUTO:5,10" : "0"
             }
         }
     });
@@ -407,7 +408,15 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang) => {
 }
 
 
+/**
+ * Builds the query body for searching sentences with given ids in meeting with given id.
+ *
+ * @param meetingId - The id of the meeting.
+ * @param sentencesIds - The ids of the sentences to search for in the meeting.
+ * @returns {{bool: {filter: [{term: {meeting_id}},{terms: {sentence_id}}]}}}
+ */
 const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
+    // TODO: figure something out for the case when meetingId is not provided
     if (!meetingId)
         throw new Error("Meeting id is required for building the query body");
 
@@ -434,13 +443,16 @@ const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
 }
 
 /**
+ * Returns the query body for searching phrases (multiple consecutive words) in meetings with given id and other filters or an empty object if the meeting id or phrases are not provided.
  *
- * @param {string} meetingId
- * @param {string[][]} phrases
- * @param {string|undefined} speaker
- * @param {string|undefined} lang
+ * @param {string} meetingId - The id of the meeting.
+ * @param {string[][]} phrases - The phrases to search for in the meeting (phrase is an array of words).
+ * @param {string|undefined} speaker - The speaker who spoke the phrases (optional).
+ * @param {string|undefined} lang - The language of the phrases (optional), if undefined, defaults to original language.
+ * @param {boolean} looseSearch - Whether to allow some fuzziness in the search.
+ * @returns {{bool: {filter: [{term: {meeting_id}},{term: {speaker}}], should: *[], minimum_should_match: number}} | {}} - The query body for searching phrases in the meeting.
  */
-const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
+const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearch) => {
 
     if (!meetingId)
         return {};
@@ -482,7 +494,7 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
                                 fuzzy: {
                                     "translations.text": {
                                         value: word,
-                                        fuzziness: "AUTO:5,10"
+                                        fuzziness: (looseSearch) ? "AUTO:5,10" : "0"
                                     }
                                 }
                             }
@@ -535,8 +547,9 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang) => {
 }
 
 /**
+ * Extracts the indexes of the words wrapped in <em> tags in the text.
  *
- * @param {string} text - The text to search for <em> tags
+ * @param {string} text - The text that contains the words wrapped in <em> tags
  * @returns {number[]} - The indexes of the words wrapped in <em> tags in the text
  */
 const getEmTagIndexes = (text) => {
