@@ -1,148 +1,123 @@
 <template>
   <div class="pdf-viewer-container">
-    <div v-if="!windowAllowsPdfDisplay()" class="toolbar-container" :class="{ 'transparent': transparentBackground() }">
-      <div class="toolbar-control-container language-control" v-if="show === 'transcript'">
-        <div class="toolbar-label">
-          <h5>{{ $t('language') }}</h5>
-        </div>
-        <div class="toolbar-content">
-          <select class="input-field" v-model="transcriptLanguage">
-            <option value="">{{ $t('dontTranslate') }}</option>
-            <option value="sl">{{ $t('sl') }}</option>
-            <option value="de">{{ $t('de') }}</option>
-          </select>
-        </div>
-      </div>
-      <div class="toolbar-control-container">
-        <div class="toolbar-label">
-          <h5>{{ $t("search") }}</h5>
-        </div>
-        <div class="toolbar-content">
-          <Typeahead :placeholder="'Išči po vsebini ...'" :list="searchedWordsList" :displayFn="wordDisplayFn"
-                     :emptyItem="''" :getter="getWordsToHighlight" @selectedChange="handleWordSelected"
-                     @searchChange="handleSearchChanged"/>
-          <div class="content-search-buttons">
-            <div class="btn btn-primary content-search-button" @click="previousHighlightClick()"
-                 v-if="showNextPrevHighlightButtons()">
-              <i class="fas fa-arrow-left"></i>
-            </div>
-            <div class="btn btn-primary content-search-button" @click="nextHighlightClick()"
-                 v-if="showNextPrevHighlightButtons()">
-              <i class="fas fa-arrow-right"></i>
-            </div>
-          </div>
-          <div class="highlight-text-info" v-if="show === 'pdf'">
-            {{
-              pdfHighlightsInstance.displayedHighlights()
-            }}
-          </div>
-          <div class="highlight-text-info" v-if="show === 'transcript'">
-            {{
-              getTranscriptHighlights()
-            }}
-          </div>
-        </div>
-      </div>
-    </div>
-    <PdfDisplay :class="{ 'blur': loading || matchLoading, 'scrollable': show === 'pdf' }"
-                v-if="windowAllowsPdfDisplay()"
+
+    <!-- Display of original document -->
+    <PdfDisplay v-if="show === 'pdf'" :class="{ 'blur': loading || matchLoading, 'scrollable': show === 'pdf' }"
                 v-bind:meeting_id="meeting_id" v-bind:matchLoading="matchLoading" @loaded="handlePdfLoaded"
                 @matchLoaded="handleMatchLoaded"
                 @loadingNewMatch="newMatchLoading" @loading="handlePdfLoading"
                 @executeInitialSearch="executeInitialSearch"></PdfDisplay>
-    <Transcript v-if="show === 'transcript'" :class="{ 'blur': loading, 'scrollable': show === 'transcript' }">
+    <!-- Display of transcript -->
+    <Transcript v-else :class="{ 'blur': loading, 'scrollable': show === 'transcript' }">
     </Transcript>
+    <!-- Display of loading whell -->
     <div class="loading-container" v-if="loading || matchLoading">
       <div class="spinner-border" role="status">
         <span class="sr-only">{{ $t('loading') }}</span>
       </div>
     </div>
-    <div class="toolbar-container" v-if="windowAllowsPdfDisplay()">
-      <div class="title">
-        <h3><strong>{{ $t('toolbar') }}</strong></h3>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar-container">
+    <!-- Toolbar title -->
+    <div class="title">
+      <h3><strong>{{ $t('toolbar') }}</strong></h3>
+    </div>
+
+    <!-- Toggle between original PDF and transcript -->
+    <div class="toolbar-control-container">
+      <div class="toolbar-label">
+        <h5>{{ $t('show') }}</h5>
       </div>
-      <div class="col">
-        <div class="toolbar-control-container">
-          <div class="toolbar-label">
-            <h5>{{ $t('show') }}</h5>
-          </div>
-          <div class="toolbar-content">
-            <select class="input-field" v-model="show">
-              <option value="pdf" id="choosePdfOption">{{ $t('originalDocument') }}</option>
-              <option value="transcript">{{ $t('transcript') }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="toolbar-control-container" v-if="show === 'transcript'">
-          <div class="toolbar-label">
-            <h5>{{ $t('transcriptLanguage') }}</h5>
-          </div>
-          <div class="toolbar-content">
-            <select class="input-field" v-model="transcriptLanguage">
-              <option value="">{{ $t('dontTranslate') }}</option>
-              <option value="sl">{{ $t('sl') }}</option>
-              <option value="de">{{ $t('de') }}</option>
-            </select>
-          </div>
-        </div>
-        <div class="toolbar-control-container">
-          <div class="toolbar-label">
-            <h5>{{ $t('textSearch') }}</h5>
-          </div>
-          <div class="toolbar-content">
-            <Typeahead :placeholder="$t('textSearchPlaceholder')" :list="searchedWordsList" :displayFn="wordDisplayFn"
-                       :emptyItem="''" :getter="getWordsToHighlight" @selectedChange="handleWordSelected"
-                       @searchChange="handleSearchChanged"/>
-            <div class="content-search-buttons">
-              <div class="btn btn-primary content-search-button" @click="previousHighlightClick()"
-                   v-if="showNextPrevHighlightButtons()">
-                <i class="fas fa-arrow-left"></i>
-              </div>
-              <div class="btn btn-primary content-search-button" @click="nextHighlightClick()"
-                   v-if="showNextPrevHighlightButtons()">
-                <i class="fas fa-arrow-right"></i>
-              </div>
-            </div>
-            <div class="highlight-text-info" v-if="show === 'pdf'">
-              {{
-                pdfHighlightsInstance.displayedHighlights()
-              }}
-            </div>
-            <div class="highlight-text-info" v-if="show === 'transcript'">
-              {{
-                getTranscriptHighlights()
-              }}
-            </div>
-          </div>
-        </div>
-        <div class="toolbar-tooltip">
-          <button class="btn btn-primary btn-tooltip" @click="toggleTooltip" :class="{ 'btn-disabled': showTooltip }">
-            <i class="fas fa-info-circle"></i>
-          </button>
-          <div class="tooltip-text" :class="{ 'tooltip-hidden': !showTooltip }">
-            <button class="btn btn-primary hide-button" @click="toggleTooltip"><i class="fas fa-eye-slash"></i></button>
-            <p>{{ $t('tooltip') }}</p>
-          </div>
-        </div>
-        <div class="pagination-control-container" v-if="show === 'pdf'">
-          <button class="btn btn-primary pagination-button" @click="documentPagination.previousPage()"
-                  :disabled="!documentPagination.hasPreviousPage()" :class="{ 'button-disbled': matchLoading }">
+      <div class="toolbar-content">
+        <select class="input-field" v-model="show">
+          <option value="pdf" id="choosePdfOption">{{ $t('originalDocument') }}</option>
+          <option value="transcript">{{ $t('transcript') }}</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Language selection -->
+    <div class="toolbar-control-container" v-if="show === 'transcript'">
+      <div class="toolbar-label">
+        <h5>{{ $t('transcriptLanguage') }}</h5>
+      </div>
+      <div class="toolbar-content">
+        <select class="input-field" v-model="transcriptLanguage">
+          <option value="">{{ $t('dontTranslate') }}</option>
+          <option value="sl">{{ $t('sl') }}</option>
+          <option value="de">{{ $t('de') }}</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Search bar -->
+    <div class="toolbar-control-container">
+      <div class="toolbar-label">
+        <h5>{{ $t('textSearch') }}</h5>
+      </div>
+      <div class="toolbar-content">
+        <Typeahead :placeholder="$t('textSearchPlaceholder')" :list="searchedWordsList" :displayFn="wordDisplayFn"
+                   :emptyItem="''" :getter="getWordsToHighlight" @selectedChange="handleWordSelected"
+                   @searchChange="handleSearchChanged"/>
+        <div class="content-search-buttons">
+          <div class="btn btn-primary content-search-button" @click="previousHighlightClick()"
+               v-if="showNextPrevHighlightButtons()">
             <i class="fas fa-arrow-left"></i>
-          </button>
-          <div class="pagination">
-            <span class="max-pages">{{ $t('page') }}&nbsp;&nbsp;</span>
-            <input type="number" class="page-input" v-model="pageInput" :min="1" :max="documentPagination.total"
-                   @keyup.enter="applyPageInput()" @blur="applyPageInput()" :class="{ 'button-disbled': matchLoading }">
-            <span class="max-pages">/ {{ documentPagination.total() }}</span>
           </div>
-          <button class="btn btn-primary pagination-button" @click="documentPagination.nextPage()"
-                  :disabled="!documentPagination.hasNextPage()">
+          <div class="btn btn-primary content-search-button" @click="nextHighlightClick()"
+               v-if="showNextPrevHighlightButtons()">
             <i class="fas fa-arrow-right"></i>
-          </button>
+          </div>
+        </div>
+        <div class="highlight-text-info" v-if="show === 'pdf'">
+          {{
+            pdfHighlightsInstance.displayedHighlights()
+          }}
+        </div>
+        <div class="highlight-text-info" v-if="show === 'transcript'">
+          {{
+            getTranscriptHighlights()
+          }}
         </div>
       </div>
     </div>
+
+    <!-- TODO: dodaj izbiro govornikov -->
+    <!-- TODO: dodaj izbiro za "loose Search" -->
+
+    <!-- Search info -->
+    <div class="toolbar-tooltip">
+      <button class="btn btn-primary btn-tooltip" @click="toggleTooltip" :class="{ 'btn-disabled': showTooltip }">
+        <i class="fas fa-info-circle"></i>
+      </button>
+      <div class="tooltip-text" :class="{ 'tooltip-hidden': !showTooltip }">
+        <button class="btn btn-primary hide-button" @click="toggleTooltip"><i class="fas fa-eye-slash"></i></button>
+        <p>{{ $t('tooltip') }}</p>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination-control-container" v-if="show === 'pdf'">
+      <button class="btn btn-primary pagination-button" @click="documentPagination.previousPage()"
+              :disabled="!documentPagination.hasPreviousPage()" :class="{ 'button-disbled': matchLoading }">
+        <i class="fas fa-arrow-left"></i>
+      </button>
+      <div class="pagination">
+        <span class="max-pages">{{ $t('page') }}&nbsp;&nbsp;</span>
+        <input type="number" class="page-input" v-model="pageInput" :min="1" :max="documentPagination.total"
+               @keyup.enter="applyPageInput()" @blur="applyPageInput()" :class="{ 'button-disbled': matchLoading }">
+        <span class="max-pages">/ {{ documentPagination.total() }}</span>
+      </div>
+      <button class="btn btn-primary pagination-button" @click="documentPagination.nextPage()"
+              :disabled="!documentPagination.hasNextPage()">
+        <i class="fas fa-arrow-right"></i>
+      </button>
+    </div>
   </div>
+
+
 </template>
 
 <style>
@@ -212,11 +187,11 @@
   margin: 0.5rem;
   padding: 0.5rem 0 0.2rem 0;
   color: #708d81;
-  border-bottom: 4px solid #708d81;
 }
 
 .pdf-viewer-container {
   display: flex;
+  height: fit-content;
 }
 
 .content-search-buttons {
@@ -238,10 +213,8 @@
 }
 
 .pdf-container {
-  min-width: 1000px;
-  width: 73vw;
-  height: 0vh;
   position: absolute;
+  width: 70%;
   left: 1vw;
   margin: 1rem auto 0 auto;
   background-color: #f0f7ee;
@@ -250,7 +223,7 @@
 }
 
 .transcript-container {
-  width: 73vw;
+  width: 70%;
   height: 0vh;
   position: absolute;
   left: 1vw;
@@ -269,12 +242,11 @@
 }
 
 .toolbar-container {
-  width: 24vw;
+  width:27%;
   height: 89vh;
   position: absolute;
   right: 0;
-  margin-top: 1rem;
-  margin-right: 1rem;
+  margin: 1rem;
   border-radius: 10px;
   background-color: #f0f7ee;
   transition: all 0.2s ease-in-out;
@@ -311,8 +283,8 @@ select {
 }
 
 .toolbar-control-container {
-  position: relative;
   margin: 0.5rem;
+  width: calc(100% - 1rem);
 }
 
 .pagination-control-container {
@@ -432,8 +404,8 @@ input[type=number] {
     height: fit-content;
     margin: 1rem 1rem 0 1rem;
     z-index: 5;
-    display: flex;
-    flex-direction: row;
+    display: grid;
+
     transition: all 0.2s ease-in-out;
   }
 
@@ -811,7 +783,7 @@ export default class PdfView extends Vue {
   }
 
   windowAllowsPdfDisplay() {
-    return this.windowWidth > 1350;
+    return true
   }
 
   transparentBackground() {
