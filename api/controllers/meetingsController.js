@@ -350,9 +350,9 @@ const getHighlights = async (req, res) => {
     try {
 
         // Open point in time for words and sentences index TODO: handle errors
-        const responses = await Promise.allSettled(promises);
-        wordsIndexPITId = responses[0].status === "fulfilled" ? responses[0].value.id : undefined;
-        sentenceIndexPITId = responses[1].status === "fulfilled" ? responses[1].value.id : undefined;
+        const responses = await Promise.all(promises);
+        wordsIndexPITId = responses[0].id;
+        sentenceIndexPITId = responses[1].id;
 
         while (true) {
             // Execute search using the chosen strategy and process the response
@@ -380,6 +380,7 @@ const getHighlights = async (req, res) => {
                 highlights: [...singleWordsHighlights, ...phrasesHighlights]
             }
 
+            // Send the partial response to the client
             res.write(JSON.stringify(partialResponse));
 
             // If there are less results than the chunk size, break the loop
@@ -392,24 +393,28 @@ const getHighlights = async (req, res) => {
             searchAfterPhrases = newSearchAfterPhrases;
         }
 
+        // End the response
         res.end();
     } catch (error) {
         console.error(error);
         res.status(500).json({error: `Internal server error`});
     } finally {
         // Close point in time for words and sentences index
-        const promises = [
-            esClient.closePointInTime({
+        const promises = [];
+        if (wordsIndexPITId) {
+            promises.push(esClient.closePointInTime({
                 body: {
                     id: wordsIndexPITId
                 }
-            }),
-            esClient.closePointInTime({
+            }));
+        }
+        if (sentenceIndexPITId) {
+            promises.push(esClient.closePointInTime({
                 body: {
                     id: sentenceIndexPITId
                 }
-            })
-        ];
+            }));
+        }
         await Promise.all(promises);
     }
 }

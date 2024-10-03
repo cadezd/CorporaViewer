@@ -137,8 +137,8 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             .filter(hit => !translatedWordsSentencesIds.includes(hit._source.sentence_id))
             .map(hit => ({
                 ids: [hit._source.word_id],
-                //texts: [hit._source.text],
-                //lemmas: [hit._source.lemma],
+                texts: [hit._source.text],
+                lemmas: [hit._source.lemma],
                 coordinates: hit._source.coordinates,
             }));
 
@@ -153,7 +153,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
         });
         const translatedSentences = translatedSentencesResponse.hits.hits.map(hit => ({
             ids: [hit._source.sentence_id],
-            //texts: [hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text)],
+            texts: [hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text)],
             coordinates: hit._source.coordinates,
         }));
 
@@ -255,8 +255,8 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
         return singleWordsResponse.hits.hits
             .map(hit => ({
                 ids: [hit._source.word_id],
-                text: hit._source.text,
-                lemma: hit._source.lemma,
+                texts: [hit._source.text],
+                lemmas: [hit._source.lemma],
                 coordinates: [],
             }));
     }
@@ -325,10 +325,10 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
             .map(response => response.value.hits.hits
                 .reduce((acc, hit) => {
                         acc.ids.push(hit._source.word_id);
-                        //acc.texts.push(hit._source.text);
-                        //acc.lemmas.push(hit._source.lemma);
+                        acc.texts.push(hit._source.text);
+                        acc.lemmas.push(hit._source.lemma);
                         return acc;
-                    }, {ids: [], /*texts: [], lemmas: [],*/ coordinates: []}
+                    }, {ids: [], texts: [], lemmas: [], coordinates: []}
                 )
             );
     }
