@@ -13,35 +13,64 @@ class BaseSearchStrategy {
      * @param {string|undefined} speaker - name of the speaker
      * @param {string|undefined} lang - language of the words to search for, if undefined, search in the original language
      * @param {boolean} looseSearch - if true, apply fuzzy search
-     * @returns {Promise<{ SingleWordsResponse, PhrasesResponse }>}
+     * @param {number} chunkSize - size of the chunks to split the search into
+     * @param {string} pitIdWords - point in time id for the words index
+     * @param {string} pitIdSentences - point in time id for the sentences index
+     * @param {string|undefined} searchAfterWords - unique identifier for deep pagination in the words index
+     * @param {string|undefined} searchAfterPhrases - unique identifier for deep pagination in the sentences index
+     * @returns {Promise<{ SingleWordsResponse, PhrasesResponse, string, string }>}
      */
 
-    async search(esClient, meetingId, words, phrases, speaker, lang, looseSearch) {
+    async search(esClient, meetingId, words, phrases, speaker, lang, looseSearch, chunkSize, pitIdWords, pitIdSentences, searchAfterWords, searchAfterPhrases) {
 
         const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang, looseSearch);
         const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang, looseSearch);
 
         const promises = [
-            esClient.search({
-                index: process.env.WORDS_INDEX_NAME || "words-index",
+              esClient.search({
+                size: chunkSize,
+                track_total_hits: false,
                 body: {
                     query: singleWordsQueryBody,
                 },
-                size: 10000
+                sort: [
+                    {
+                        "word_id.sort": {
+                            order: "asc"
+                        }
+                    }
+                ],
+                pit: {
+                    id: pitIdWords,
+                    keep_alive: "1m"
+                },
+                ...(searchAfterWords !== undefined && { search_after: [searchAfterWords] }),
             }),
             esClient.search({
-                index: process.env.SENTENCES_INDEX_NAME || "sentences-index",
-                min_score: 1,
+                size: chunkSize,
+                track_total_hits: false,
                 body: {
                     query: phrasesQueryBody,
                 },
-                size: 10000,
+                min_score: 1,
                 highlight: {
                     number_of_fragments: 0,
                     fields: {
                         "translations.text": {}
                     }
-                }
+                },
+                sort: [
+                    {
+                        "sentence_id.sort": {
+                            order: "asc"
+                        }
+                    }
+                ],
+                pit: {
+                    id: pitIdSentences,
+                    keep_alive: "1m"
+                },
+                ...(searchAfterPhrases !== undefined && { search_after: [searchAfterPhrases] }),
             })
         ];
 
@@ -50,7 +79,13 @@ class BaseSearchStrategy {
         const singleWordsResponse = responses[0].status === "fulfilled" ? responses[0].value : undefined;
         const phrasesResponse = responses[1].status === "fulfilled" ? responses[1].value : undefined;
 
-        return {singleWordsResponse, phrasesResponse};
+        const singleWordsHits = singleWordsResponse ? singleWordsResponse.hits.hits : [];
+        const phrasesHits = phrasesResponse ? phrasesResponse.hits.hits : [];
+
+        searchAfterWords = singleWordsHits.length > 0 ? singleWordsHits[singleWordsHits.length - 1].sort[0] : undefined;
+        searchAfterPhrases = phrasesHits.length > 0 ? phrasesHits[phrasesHits.length - 1].sort[0] : undefined;
+
+        return {singleWordsResponse, phrasesResponse, searchAfterWords, searchAfterPhrases};
     }
 
     /**
@@ -179,10 +214,12 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
 
             promises.push(esClient.search({
                 index: process.env.WORDS_INDEX_NAME || "words-index",
+                size: 10000,
+                track_total_hits: false,
                 body: {
                     query: queryBody,
                 },
-                size: 10000
+
             }));
         }
 
@@ -270,12 +307,13 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
                 }
             }
 
-            promises.push(esClient.search({
+            promises.push(await esClient.search({
                 index: process.env.WORDS_INDEX_NAME || "words-index",
+                size: 10000,
+                track_total_hits: false,
                 body: {
                     query: queryBody,
                 },
-                size: 10000
             }));
         }
 
