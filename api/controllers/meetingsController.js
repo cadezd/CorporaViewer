@@ -323,22 +323,94 @@ const getHighlights = async (req, res) => {
     const words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
     const phrases = tokens.filter(token => token.length > 1);
 
+    // Point in time id for words and sentences index
+    let wordsIndexPITId = undefined;
+    let sentenceIndexPITId = undefined;
+    const promises = [
+        esClient.openPointInTime({
+            index: process.env.WORDS_INDEX_NAME || 'words-index',
+            keep_alive: '2m'
+        }),
+        esClient.openPointInTime({
+            index: process.env.SENTENCES_INDEX_NAME || 'sentences-index',
+            keep_alive: '2m'
+        })
+    ];
+
+    // Search after values for words and phrases pagination
+    let searchAfterWords = undefined;
+    let searchAfterPhrases = undefined;
+
+    // Size of the chunk to process at once
+    const chunkSize = 1000;
+
     // Get appropriate strategy based on the language
     const searchStrategy = searchStrategiesSelector(lang);
 
     try {
-        // Execute search using the chosen strategy and process the response
-        const {
-            singleWordsResponse,
-            phrasesResponse
-        } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang, looseSearch);
-        const singleWordsHighlights = await searchStrategy.processSingleWordsResponse(singleWordsResponse, esClient, meetingId);
-        const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, esClient, meetingId);
 
-        res.json({words: words, phrases: phrases, highlights: [...singleWordsHighlights, ...phrasesHighlights]});
+        // Open point in time for words and sentences index TODO: handle errors
+        const responses = await Promise.allSettled(promises);
+        wordsIndexPITId = responses[0].status === "fulfilled" ? responses[0].value.id : undefined;
+        sentenceIndexPITId = responses[1].status === "fulfilled" ? responses[1].value.id : undefined;
+
+        while (true) {
+            // Execute search using the chosen strategy and process the response
+            const {
+                singleWordsResponse,
+                phrasesResponse,
+                searchAfterWords: newSearchAfterWords,
+                searchAfterPhrases: newSearchAfterPhrases
+            } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang, looseSearch, chunkSize, wordsIndexPITId, sentenceIndexPITId, searchAfterWords, searchAfterPhrases);
+
+
+            // If there are no more results, break the loop
+            if ((!singleWordsResponse || (singleWordsResponse && !singleWordsResponse.hits.hits.length)) &&
+                (!phrasesResponse || (phrasesResponse && !phrasesResponse.hits.hits.length))) {
+                break;
+            }
+
+            const singleWordsHighlights = await searchStrategy.processSingleWordsResponse(singleWordsResponse, esClient, meetingId);
+            const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, esClient, meetingId);
+
+            // Send the partial response to the client
+            const partialResponse = {
+                words: words,
+                phrases: phrases,
+                highlights: [...singleWordsHighlights, ...phrasesHighlights]
+            }
+
+            res.write(JSON.stringify(partialResponse));
+
+            // If there are less results than the chunk size, break the loop
+            if ((singleWordsResponse && singleWordsResponse.hits.hits.length < chunkSize) && (phrasesResponse && phrasesResponse.hits.hits.length < chunkSize)) {
+                break;
+            }
+
+            // Update searchAfter values
+            searchAfterWords = newSearchAfterWords;
+            searchAfterPhrases = newSearchAfterPhrases;
+        }
+
+        res.end();
     } catch (error) {
         console.error(error);
         res.status(500).json({error: `Internal server error`});
+    } finally {
+        // Close point in time for words and sentences index
+        const promises = [
+            esClient.closePointInTime({
+                body: {
+                    id: wordsIndexPITId
+                }
+            }),
+            esClient.closePointInTime({
+                body: {
+                    id: sentenceIndexPITId
+                }
+            })
+        ];
+        await Promise.all(promises);
     }
 }
 
