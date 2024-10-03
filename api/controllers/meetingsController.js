@@ -309,7 +309,7 @@ const getMeetingAsText = async (req, res) => {
 
 
 const getHighlights = async (req, res) => {
-    const meetingId = req.query.meetingId;
+    const meetingId = req.params.meetingId;
     const query = req.query.words;
     const speaker = req.query.speaker;
     const lang = req.query.lang;
