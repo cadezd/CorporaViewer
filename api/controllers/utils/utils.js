@@ -347,30 +347,8 @@ const buildQueryBody = (words, placeNames, speaker, filters) => {
  * @returns {{bool: {filter: [{term: {meeting_id}},{term: {speaker}}], should: *[], minimum_should_match: number}} | {}} - The query body for searching words in the meeting.
  */
 const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) => {
-    if (!meetingId)
+    if (!meetingId || !words || words.length === 0)
         return {};
-
-    if (!words || words.length === 0)
-        return {};
-
-
-    let speakerFilter;
-    if (speaker) {
-        speakerFilter = {
-            term: {
-                "speaker": speaker
-            }
-        };
-    }
-
-    let langFilter;
-    if (lang) {
-        langFilter = {
-            term: {
-                "lang": lang
-            }
-        };
-    }
 
     // Single word is a match if it matches either lemma or text, we also allow some fuzziness
     let wordsFilter = words.map(word => {
@@ -385,9 +363,8 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
         }
     });
 
-
     // Build the query body
-    let queryBody = {
+    return {
         bool: {
             filter: [
                 {
@@ -395,16 +372,14 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
                         "meeting_id": meetingId
                     }
                 },
-                speakerFilter,
-                langFilter
+                // Add filters for speaker and language if provided
+                ...(speaker ? [{term: {"speaker": speaker}}] : []),
+                ...(lang ? [{term: {"lang": lang}}] : [])
             ],
             should: wordsFilter,
             minimum_should_match: 1
         }
-    }
-
-    // Remove null and undefined values from the query body
-    return cleanQuery(queryBody);
+    };
 }
 
 
@@ -454,33 +429,9 @@ const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
  */
 const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearch) => {
 
-    if (!meetingId)
+    if (!meetingId || !phrases || phrases.length === 0)
         return {};
 
-    if (!phrases || phrases.length === 0)
-        return {};
-
-    let speakerFilter;
-    if (speaker) {
-        speakerFilter = {
-            term: {
-                "speaker": speaker
-            }
-        };
-    }
-
-    let langFilter = {
-        term: {
-            "translations.original": 1
-        }
-    };
-    if (lang) {
-        langFilter = {
-            term: {
-                "translations.lang": lang
-            }
-        };
-    }
 
     const phrasesFilters = phrases.map(phrase => {
         // All words in the phrase must be present in the sentence one after the other in the given order
@@ -516,7 +467,8 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                         "meeting_id": meetingId
                     }
                 },
-                speakerFilter,
+                // Add filters for speaker if provided
+                ...(speaker ? [{term: {"speaker": speaker}}] : []),
             ],
             should: [
                 {
@@ -525,7 +477,8 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                         query: {
                             bool: {
                                 filter: [
-                                  langFilter
+                                    // Add filter for language if provided else search in the original language
+                                    ...(lang ? [{term: {"translations.lang": lang}}] : [{term: {"translations.original": 1}}]),
                                 ],
                                 should: phrasesFilters,
                                 minimum_should_match: 1
