@@ -23,11 +23,12 @@ class BaseSearchStrategy {
 
     async search(esClient, meetingId, words, phrases, speaker, lang, looseSearch, chunkSize, pitIdWords, pitIdSentences, searchAfterWords, searchAfterPhrases) {
 
+        // Build the query body for single words and phrases
         const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang, looseSearch);
         const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang, looseSearch);
 
         const promises = [
-              esClient.search({
+            esClient.search({
                 size: chunkSize,
                 track_total_hits: false,
                 body: {
@@ -44,7 +45,7 @@ class BaseSearchStrategy {
                     id: pitIdWords,
                     keep_alive: "1m"
                 },
-                ...(searchAfterWords !== undefined && { search_after: [searchAfterWords] }),
+                ...(searchAfterWords !== undefined && {search_after: [searchAfterWords]}),
             }),
             esClient.search({
                 size: chunkSize,
@@ -70,18 +71,18 @@ class BaseSearchStrategy {
                     id: pitIdSentences,
                     keep_alive: "1m"
                 },
-                ...(searchAfterPhrases !== undefined && { search_after: [searchAfterPhrases] }),
+                ...(searchAfterPhrases !== undefined && {search_after: [searchAfterPhrases]}),
             })
         ];
 
+        // Fetch the data for single words and phrases
         const responses = await Promise.allSettled(promises);
-
         const singleWordsResponse = responses[0].status === "fulfilled" ? responses[0].value : undefined;
         const phrasesResponse = responses[1].status === "fulfilled" ? responses[1].value : undefined;
 
+        // Get the unique identifier for deep pagination
         const singleWordsHits = singleWordsResponse ? singleWordsResponse.hits.hits : [];
         const phrasesHits = phrasesResponse ? phrasesResponse.hits.hits : [];
-
         searchAfterWords = singleWordsHits.length > 0 ? singleWordsHits[singleWordsHits.length - 1].sort[0] : undefined;
         searchAfterPhrases = phrasesHits.length > 0 ? phrasesHits[phrasesHits.length - 1].sort[0] : undefined;
 
@@ -230,11 +231,11 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             .map(response => response.value.hits.hits
                 .reduce((acc, hit) => {
                         acc.ids.push(hit._source.word_id);
-                        //acc.texts.push(hit._source.text);
-                        //acc.lemmas.push(hit._source.lemma);
+                        acc.texts.push(hit._source.text);
+                        acc.lemmas.push(hit._source.lemma);
                         acc.coordinates.push(...hit._source.coordinates);
                         return acc;
-                    }, {ids: [], /*texts: [], lemmas: [],*/ coordinates: []}
+                    }, {ids: [], texts: [], lemmas: [], coordinates: []}
                 )
             );
 
