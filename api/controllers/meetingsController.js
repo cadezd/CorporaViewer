@@ -315,6 +315,11 @@ const getHighlights = async (req, res) => {
     const lang = req.query.lang;
     const looseSearch = req.query.looseSearch === "true";
 
+    if (!query) {
+        res.status(400).json({error: "Bad request, missing query"});
+        return;
+    }
+
     // Tokenize the query and separate it into words and phrases
     const tokens = utils.tokenizeQuery(query)
         .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
@@ -349,7 +354,7 @@ const getHighlights = async (req, res) => {
 
     try {
 
-        // Open point in time for words and sentences index TODO: handle errors
+        // Open point in time for words and sentences index
         const responses = await Promise.all(promises);
         wordsIndexPITId = responses[0].id;
         sentenceIndexPITId = responses[1].id;
@@ -383,7 +388,7 @@ const getHighlights = async (req, res) => {
             // Send the partial response to the client
             res.write(JSON.stringify(partialResponse));
 
-            // If there are less results than the chunk size, break the loop
+            // If there are fewer results than the chunk size, break the loop
             if ((singleWordsResponse && singleWordsResponse.hits.hits.length < chunkSize) && (phrasesResponse && phrasesResponse.hits.hits.length < chunkSize)) {
                 break;
             }
