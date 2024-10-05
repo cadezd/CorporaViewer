@@ -219,7 +219,7 @@ const getPage = async (req, res) => {
  * @returns {Promise<void>} - A Promise that resolves when the meeting is retrieved.
  */
 const getMeetingAsText = async (req, res) => {
-    const meetingId = req.query.meetingId
+    const meetingId = req.params.meetingId
     const lang = req.query.lang
     const pageLang = lang || req.query.pageLang
 
