@@ -488,6 +488,13 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                         inner_hits: {
                             name: "matched_translation",
                             size: 1,
+                            // Highlight the matched words in the sentence
+                            highlight: {
+                                number_of_fragments: 0,
+                                fields: {
+                                    "translations.text": {}
+                                }
+                            },
                         }
                     }
                 }
