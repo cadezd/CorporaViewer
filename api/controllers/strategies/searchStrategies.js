@@ -77,8 +77,8 @@ class BaseSearchStrategy {
         // Get the unique identifier for deep pagination
         const singleWordsHits = singleWordsResponse ? singleWordsResponse.hits.hits : [];
         const phrasesHits = phrasesResponse ? phrasesResponse.hits.hits : [];
-        searchAfterWords = singleWordsHits.length > 0 ? singleWordsHits[singleWordsHits.length - 1].sort[0] : undefined;
-        searchAfterPhrases = phrasesHits.length > 0 ? phrasesHits[phrasesHits.length - 1].sort[0] : undefined;
+        searchAfterWords = singleWordsHits.length > 0 ? singleWordsHits[singleWordsHits.length - 1].sort[0] : searchAfterWords;
+        searchAfterPhrases = phrasesHits.length > 0 ? phrasesHits[phrasesHits.length - 1].sort[0] : searchAfterPhrases;
 
         return {singleWordsResponse, phrasesResponse, searchAfterWords, searchAfterPhrases};
     }
