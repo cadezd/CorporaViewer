@@ -309,6 +309,9 @@ const getMeetingAsText = async (req, res) => {
 
 
 const getHighlights = async (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
     const meetingId = req.params.meetingId;
     const query = req.query.words;
     const speaker = req.query.speaker;
@@ -369,7 +372,7 @@ const getHighlights = async (req, res) => {
             } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang, looseSearch, chunkSize, wordsIndexPITId, sentenceIndexPITId, searchAfterWords, searchAfterPhrases);
 
 
-            // If there are no more results, break the loop
+            // If there are no results, send empty response and break the loop
             if ((!singleWordsResponse || (singleWordsResponse && !singleWordsResponse.hits.hits.length)) &&
                 (!phrasesResponse || (phrasesResponse && !phrasesResponse.hits.hits.length))) {
                 break;
@@ -379,14 +382,7 @@ const getHighlights = async (req, res) => {
             const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, esClient, meetingId);
 
             // Send the partial response to the client
-            const partialResponse = {
-                words: words,
-                phrases: phrases,
-                highlights: [...singleWordsHighlights, ...phrasesHighlights]
-            }
-
-            // Send the partial response to the client
-            res.write(JSON.stringify(partialResponse));
+            res.write(JSON.stringify({words: words, phrases: phrases, highlights: [...singleWordsHighlights, ...phrasesHighlights]}) + "\n");
 
             // If there are fewer results than the chunk size, break the loop
             if ((singleWordsResponse && singleWordsResponse.hits.hits.length < chunkSize) && (phrasesResponse && phrasesResponse.hits.hits.length < chunkSize)) {
