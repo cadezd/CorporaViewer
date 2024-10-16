@@ -476,18 +476,13 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                         path: "translations",
                         query: {
                             bool: {
-                                filter: [
-                                    // Add filter for language if provided else search in the original language
-                                    ...(lang ? [{term: {"translations.lang": lang}}] : [{term: {"translations.original": 1}}]),
-                                ],
                                 should: phrasesFilters,
                                 minimum_should_match: 1
                             }
                         },
-                        // This tells us if the phrase was found in the original language or in translation
+                        // This tells us in which translation the phrase was found (could be in multiple translations)
                         inner_hits: {
                             name: "matched_translation",
-                            size: 1,
                             // Highlight the matched words in the sentence
                             highlight: {
                                 number_of_fragments: 0,
@@ -495,6 +490,14 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                                     "translations.text": {}
                                 }
                             },
+                            // Sort the inner hits by the original translation (in case there are matches in multiple translations, we want to show the original one first)
+                            sort: [
+                                {
+                                    "translations.original": {
+                                        order: "desc"
+                                    }
+                                }
+                            ],
                         }
                     }
                 }

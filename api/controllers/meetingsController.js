@@ -381,8 +381,25 @@ const getHighlights = async (req, res) => {
             const singleWordsHighlights = await searchStrategy.processSingleWordsResponse(singleWordsResponse, esClient, meetingId);
             const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, esClient, meetingId);
 
+
+            // Filter out words if they are part of a sentence that is already highlighted
+            const highlights = [...singleWordsHighlights, ...phrasesHighlights];
+            const sentenceIds = new Set(highlights
+                .flatMap(highlight => highlight.ids)
+                .filter(id => id.includes(".s") && !id.includes(".w"))
+            );
+            const filteredHighlights = highlights.filter(highlight => {
+                // Just a safety check
+                if (highlight.ids.length === 0)
+                    return false;
+                // Sentence highlights always have exactly one id
+                if (highlight.ids.length === 1 && highlight.ids[0].includes(".s") && !highlight.ids[0].includes(".w"))
+                    return true;
+                return !highlight.ids.some(id => sentenceIds.has(id.split(".w")[0]));
+            });
+
             // Send the partial response to the client
-            res.write(JSON.stringify({words: words, phrases: phrases, highlights: [...singleWordsHighlights, ...phrasesHighlights]}) + "\n");
+            res.write(JSON.stringify({words: words, phrases: phrases, highlights: filteredHighlights}) + "\n");
 
             // If there are fewer results than the chunk size, break the loop
             if ((singleWordsResponse && singleWordsResponse.hits.hits.length < chunkSize) && (phrasesResponse && phrasesResponse.hits.hits.length < chunkSize)) {

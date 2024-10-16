@@ -227,7 +227,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                     // If it's the first word or the difference in `wpos` between the current and previous word is greater than one
                     if (index === 0 || (hit._source.wpos - hits[index - 1]._source.wpos) > 1) {
                         // Start a new group
-                        acc.push({ ids: [], texts: [], lemmas: [], coordinates: [] });
+                        acc.push({ids: [], texts: [], lemmas: [], coordinates: []});
                     }
                     // Add word details to the current group
                     const currentGroup = acc[acc.length - 1];
@@ -321,14 +321,14 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
 
         // Fetch the data for the words that are highlighted in the original sentences
         const responses = await Promise.allSettled(promises);
-        const groups =  responses
+        const groups = responses
             .filter(response => response.status === "fulfilled")
             .map(response => response.value.hits.hits
                 .reduce((acc, hit, index, hits) => {
                     // If it's the first word or the difference in `wpos` between the current and previous word is greater than one
                     if (index === 0 || (hit._source.wpos - hits[index - 1]._source.wpos) > 1) {
                         // Start a new group
-                        acc.push({ ids: [], texts: [], lemmas: [], coordinates: [] });
+                        acc.push({ids: [], texts: [], lemmas: [], coordinates: []});
                     }
                     // Add word details to the current group
                     const currentGroup = acc[acc.length - 1];
