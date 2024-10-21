@@ -544,6 +544,34 @@ const getEmTagIndexes = (text) => {
 }
 
 
+const groupCoordinates = (coordinates) => {
+    return coordinates.reduce((acc, coord) => {
+        // Find or create an entry for the current page
+        let pageGroup = acc.find(item => item.page === coord.page);
+
+        if (!pageGroup) {
+            pageGroup = {page: coord.page, coordinates: []};
+            acc.push(pageGroup);
+        }
+
+        // Find if there's an existing coordinate with the same y0 value
+        const existing = pageGroup.coordinates.find(
+            c => c.y0 === coord.y0
+        );
+
+        if (existing) {
+            // Update x0 to be the minimum, and x1 to be the maximum
+            existing.x0 = Math.min(existing.x0, coord.x0);
+            existing.x1 = Math.max(existing.x1, coord.x1);
+        } else {
+            // If no match is found for y0, add the new coordinate to the coordinates array
+            pageGroup.coordinates.push({x0: coord.x0, y0: coord.y0, x1: coord.x1, y1: coord.y1});
+        }
+
+        return acc;
+    }, []);
+}
+
 module.exports = {
     shouldMatchLemmaAndText,
     tokenizeQuery,
@@ -562,5 +590,6 @@ module.exports = {
     wordsSearchQueryBuilder,
     sentencesCoordinatesQueryBuilder,
     phrasesSearchQueryBuilder,
-    getEmTagIndexes
+    getEmTagIndexes,
+    groupCoordinates
 }

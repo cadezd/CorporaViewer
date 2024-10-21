@@ -1,5 +1,6 @@
 require('dotenv').config();
 const utils = require("../utils/utils");
+const url = require("node:url");
 
 
 class BaseSearchStrategy {
@@ -134,7 +135,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 ids: [hit._source.word_id],
                 texts: [hit._source.text],
                 lemmas: [hit._source.lemma],
-                coordinates: hit._source.coordinates,
+                rects: utils.groupCoordinates(hit._source.coordinates),
             }));
 
         // Fetch the data for sentences that contain the translated words
@@ -149,7 +150,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
         const translatedSentences = translatedSentencesResponse.hits.hits.map(hit => ({
             ids: [hit._source.sentence_id],
             texts: [hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text)],
-            coordinates: hit._source.coordinates,
+            rects: utils.groupCoordinates(hit._source.coordinates),
         }));
 
         return [...originalWords, ...translatedSentences];
@@ -167,7 +168,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             .map(hit => ({
                 ids: [hit._source.sentence_id],
                 //texts: [hit.inner_hits.matched_translation.hits.hits.map(hit => hit._source.text)],
-                coordinates: hit._source.coordinates,
+                rects: utils.groupCoordinates(hit._source.coordinates)
             }));
 
         // For original phrases, we collect the data of the sentences id and highlights (text that shows the matched words - wrapped in <em> tags)
@@ -226,19 +227,31 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 .reduce((acc, hit, index, hits) => {
                     // If it's the first word or the difference in `wpos` between the current and previous word is greater than one
                     if (index === 0 || (hit._source.wpos - hits[index - 1]._source.wpos) > 1) {
+
+                        // Group the coordinates of the previous group
+                        if (index > 0) {
+                            acc[acc.length - 1].rects = utils.groupCoordinates(acc[acc.length - 1].rects);
+                        }
+
                         // Start a new group
-                        acc.push({ids: [], texts: [], lemmas: [], coordinates: []});
+                        acc.push({ids: [], /*texts: [], lemmas: [],*/ rects: []});
                     }
                     // Add word details to the current group
                     const currentGroup = acc[acc.length - 1];
                     currentGroup.ids.push(hit._source.word_id);
-                    currentGroup.texts.push(hit._source.text);
-                    currentGroup.lemmas.push(hit._source.lemma);
-                    currentGroup.coordinates.push(...hit._source.coordinates);
+                    /*currentGroup.texts.push(hit._source.text);
+                    currentGroup.lemmas.push(hit._source.lemma);*/
+                    currentGroup.rects.push(...hit._source.coordinates);
+
+                    // Group the coordinates of the last group
+                    if (index === hits.length - 1) {
+                        currentGroup.rects = utils.groupCoordinates(currentGroup.rects);
+                    }
 
                     return acc;
                 }, []) // Initialize acc as an empty array to hold word groups
             );
+
 
         return [...translatedSentences, ...(originalWords.flat())];
     }
@@ -259,7 +272,7 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
                 ids: [hit._source.word_id],
                 texts: [hit._source.text],
                 lemmas: [hit._source.lemma],
-                coordinates: [],
+                rects: [],
             }));
     }
 
@@ -328,13 +341,15 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
                     // If it's the first word or the difference in `wpos` between the current and previous word is greater than one
                     if (index === 0 || (hit._source.wpos - hits[index - 1]._source.wpos) > 1) {
                         // Start a new group
-                        acc.push({ids: [], texts: [], lemmas: [], coordinates: []});
+                        acc.push({ids: [], texts: [], lemmas: [], rects: []});
                     }
                     // Add word details to the current group
                     const currentGroup = acc[acc.length - 1];
                     currentGroup.ids.push(hit._source.word_id);
                     currentGroup.texts.push(hit._source.text);
                     currentGroup.lemmas.push(hit._source.lemma);
+
+
                     currentGroup.coordinates.push(...hit._source.coordinates);
 
                     return acc;
