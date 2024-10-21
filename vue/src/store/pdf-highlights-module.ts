@@ -2,14 +2,15 @@ import {Module, MutationTree} from "vuex";
 import {RootState} from "@/store/index";
 import {PdfHighlights} from "@/types/Highlights";
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
+import {AnnotationFactory} from "annotpdf";
 
 interface PdfHighlightsState {
     instance: PdfHighlights;
 }
 
 const mutations: MutationTree<PdfHighlightsState> = {
-    findMatches(state: PdfHighlightsState) {
-        state.instance.findMatches();
+    async findMatches(state: PdfHighlightsState) {
+        await state.instance.findMatches();
     },
     previousHighlight(state: PdfHighlightsState) {
         state.instance.previousHighlight();
@@ -34,6 +35,16 @@ const mutations: MutationTree<PdfHighlightsState> = {
     },
     updateEventBus(state: PdfHighlightsState, eventBus: PdfJsViewer.EventBus) {
         state.instance.eventBus = eventBus;
+    },
+    updatePdfViewer(state: PdfHighlightsState, pdfViewer: PdfJsViewer.PDFViewer) {
+        state.instance.pdfViewer = pdfViewer;
+    },
+    updatePdfJsLib(state: PdfHighlightsState, pdfjsLib: any) {
+        state.instance.pdfjsLib = pdfjsLib;
+    },
+    updatePdfAnnotationFactory(state: PdfHighlightsState, pdfAnnotationFactory: AnnotationFactory) {
+        state.instance.pdfAnnotationFactory = pdfAnnotationFactory;
+        state.instance.originalPdfData = pdfAnnotationFactory?.write().slice(0);
     },
     updateSource(state: PdfHighlightsState, source: any) {
         state.instance.source = source;

@@ -1,7 +1,8 @@
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
 import {reactive} from 'vue';
-import axios from "axios";
-import {Word} from "@/types/Word";
+import {Highlight} from "@/types/Highlight";
+import {AnnotationFactory} from 'annotpdf';
+import {Rect} from "@/types/Rect";
 
 export interface Highlights {
 
@@ -79,110 +80,99 @@ export class TranscriptHighlights implements TranscriptHighlights {
 
     // this function is called whenever search string changes or original transcript changes, so transcript is never just an empty string
     findMatches = async () => {
-        this.clearMatches();
-        if (this.search().length > 2) {
-            const searchTerms = this.search().split(' ');
-            let highlightedTranscript = this.transcript;
+        await this.clearMatches();
 
-            /*
-            // simulate the api response that return following data ['DZK_1903-10-06_44_03_seg56.s11.w41', 'DZK_1903-10-06_44_03_seg56.s10.w26', 'DZK_1903-10-06_44_03_seg58.s36.w21', 'DZK_1903-10-06_44_03_seg59.s11.w18']
-            let promise: Promise<string[]> = new Promise((resolve, reject) => {
-                setTimeout(() => resolve(['DZK_1903-10-06_44_03_seg56.s11.w41', 'DZK_1903-10-06_44_03_seg56.s10.w26', 'DZK_1903-10-06_44_03_seg58.s36.w21', 'DZK_1903-10-06_44_03_seg59.s11.w18']), 2000);
-            });
-
-            await promise.then((data: string[]) => {
-                data.forEach((id: string) => {
-                    let element = document.getElementById(id);
-                    if (element)
-                        element.classList.add('transcript-highlight');
-                });
-            });
-
-             */
-
-            let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getWordsToHighlight?words=${this.search()}`;
-            if (this.language) URL += `&language=${this.language}`;
-
-            let response = await axios.get(URL);
-
-            let wordsToHighlight = response.data;
-
-            wordsToHighlight.forEach((wordsAndPhrases: Word[]) => {
-
-                if (wordsAndPhrases.length === 1) {
-                    let word = wordsAndPhrases[0];
-                    let tmp = document.createElement('template');
-                    tmp.innerHTML = highlightedTranscript;
-
-                    let element = tmp.content.getElementById(word.id);
-                    if (element)
-                        element.classList.add('transcript-highlight');
-
-                    highlightedTranscript = tmp.innerHTML;
-                } else {
-                    // wrap the phrase in a span with class transcript-highlight
-                    let span = document.createElement('span');
-                    span.classList.add('transcript-highlight');
-
-                    span.innerHTML = wordsAndPhrases.map((word: Word) => {
-                        return document.getElementById(word.id)?.outerHTML || "";
-                    }).join(' ').trim();
+        if (this.search().length <= 2)
+            return;
 
 
-                    let tmp = document.createElement('template');
-                    tmp.innerHTML = highlightedTranscript;
+        let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
+        if (this.language) URL += `&lang=${this.language}`;
 
-                    // delete the original words from the transcript except the first one
-                    wordsAndPhrases.forEach((word: Word, i: number) => {
-                        if (i !== 0) {
-                            let element = tmp.content.getElementById(word.id);
-                            if (element) {
-                                element.remove();
-                            }
-                        }
-                    });
+        URL += `&looseSearch=true`;
+        // TODO: add speaker to the URL
+        // TODO: add looseSearch to the URL
 
-                    let element = tmp.content.getElementById(wordsAndPhrases[0].id);
-                    if (element) {
-                        element.replaceWith(span);
+        let response = undefined;
+        try {
+            response = await fetch(URL);
+        } catch (error) {
+            console.error('Request error:', error);
+            return;
+        }
+
+        if (!response || !response.ok || !response.body) {
+            console.error('Response not ok');
+            return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = '';
+
+        let transcriptContent = new DOMParser().parseFromString(this.transcript, 'text/html');
+
+        while (true) {
+            const {done, value} = await reader.read();
+
+            if (done)
+                break;
+
+            // Decode the chunk and add it to the buffer
+            buffer += decoder.decode(value, {stream: true});
+
+            // Process the complete JSON object from the buffer
+            let boundary = buffer.indexOf('\n');
+
+
+            while (boundary !== -1) {
+                const chunk = buffer.slice(0, boundary);
+                buffer = buffer.slice(boundary + 1);
+
+                if (chunk.trim()) {
+                    let parsedChunk = undefined;
+                    try {
+                        parsedChunk = JSON.parse(chunk);
+                    } catch (e) {
+                        console.error("Error parsing chunk:", e);
+                        continue;
                     }
 
-                    // remove other words from the transcript
-                    highlightedTranscript = tmp.innerHTML;
+                    const highlights: Highlight[] = parsedChunk.highlights;
+
+                    for (const highlight of highlights) {
+                        const firstChild = transcriptContent.getElementById(highlight.ids[0]);
+                        if (!firstChild) {
+                            console.error("Element not found");
+                            continue;
+                        }
+
+                        const newParent = transcriptContent.createElement('span');
+                        newParent.classList.add('transcript-highlight');
+
+                        firstChild.parentNode?.insertBefore(newParent, firstChild);
+
+                        highlight.ids.forEach((id: string) => {
+                            const element = transcriptContent.getElementById(id);
+                            if (element) {
+                                const prevTextNode = element.previousSibling;
+                                if (prevTextNode && prevTextNode.nodeType === Node.TEXT_NODE) {
+                                    newParent.appendChild(prevTextNode);
+                                }
+                                newParent.appendChild(element);
+                            }
+                        });
+                    }
                 }
-            });
-
-            /*
-            ids.forEach((id: string) => {
-                let tmp = document.createElement('template');
-                tmp.innerHTML = highlightedTranscript;
-
-                let element = tmp.content.getElementById(id);
-                if (element)
-                    element.classList.add('transcript-highlight');
-
-                highlightedTranscript = tmp.innerHTML;
-            });
-
-             */
-
-
-            /*
-            searchTerms.forEach((searchTerm: string) => {
-                const regex = new RegExp(`(?!<[^>]*>)${searchTerm}(?![^<]*>)`, 'gi');
-                highlightedTranscript = highlightedTranscript.replace(regex, (match) => `<span class="transcript-highlight">${match}</span>`);
-            });
-            */
-
-
-            this.transcript = highlightedTranscript;
-            if (this.container) {
-                this.container.innerHTML = highlightedTranscript;
-                this._saveHighlights(true);
+                boundary = buffer.indexOf('\n');
             }
-        } else {
-            this.transcript = this.originalTranscript;
-            if (this.container) this.container.innerHTML = this.transcript;
+        }
+
+        this.transcript = transcriptContent.body.innerHTML;
+        if (this.container) {
+            this.container.innerHTML = this.transcript;
+            this._saveHighlights(true);
         }
     }
 
@@ -203,7 +193,7 @@ export class TranscriptHighlights implements TranscriptHighlights {
         }
     }
 
-    clearMatches() {
+    async clearMatches() {
         this.transcript = this.originalTranscript;
         if (this.container) this.container.innerHTML = this.transcript;
         this.highlights = undefined;
@@ -244,28 +234,27 @@ export class TranscriptHighlights implements TranscriptHighlights {
 // PDF highlights
 // -----------------------------
 
-export class PdfPageMatch {
-    id: number;
-    page: number;
-    wordIndex: number;
-    htmlElement?: HTMLElement;
 
-    constructor(id: number, page: number, wordIndex: number, htmlElement?: HTMLElement) {
-        this.id = id;
-        this.page = page;
-        this.wordIndex = wordIndex;
-        this.htmlElement = htmlElement;
-    }
+export class PdfHighlight {
+    rects: Rect[];
+    height: number;
+    centerY: number;
 
-    loaded = () => {
-        return this.htmlElement != undefined;
+    constructor(rects: Rect[]) {
+        this.rects = rects;
+        this.height = rects[rects.length - 1].coordinates[0].y1 - rects[0].coordinates[0].y0;
+        this.centerY = rects[0].coordinates[0].y0 - this.height / 2;
     }
 }
 
 export interface PdfHighlights extends Highlights {
     // variables
-    highlights: PdfPageMatch[];
+    highlights: PdfHighlight[];
     eventBus?: PdfJsViewer.EventBus;
+    pdfViewer?: PdfJsViewer.PDFViewer;
+    pdfAnnotationFactory?: AnnotationFactory;
+    pdfData?: Uint8Array;
+    pdfjsLib?: any;
     source?: any;
 
     // functions
@@ -297,41 +286,139 @@ export class PdfHighlights implements PdfHighlights {
     eventBus?: PdfJsViewer.EventBus;
     source?: any;
 
-    private _createPageMatches = (pageMatchesArray: any[]) => {
-        let i = 0;
-        this.highlights = [];
-
-        for (let page = 0; page < pageMatchesArray.length; page++) {
-            pageMatchesArray[page].forEach((match: any) => {
-                const id = i;
-                const pageMatch = new PdfPageMatch(id, page, match, undefined);
-                this.highlights.push(pageMatch);
-                i++;
-            });
-        }
-    }
-
     // functions
-    findMatches = () => {
-        if (this.search().length > 2) {
-            console.log(this.source)
-            /*
-            this.eventBus?.dispatch('find', {
-                source: this.source,
-                highlightAll: true,
-                type: "",
-                caseSensitive: false,
-                query: this.search().split(' ')
-            });
+    findMatches = async () => {
+        this.highlights = [];
+        if (this.search().length <= 2) {
+            await this.clearMatches();
+        } else {
+            let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
 
-             */
-            this.touched = true;
-        } else if (this.total > 0) {
-            this.clearMatches();
+            console.log(URL);
+            if (this.language) URL += `&lang=${this.language}`;
+
+            console.log(this.language);
+            URL += `&looseSearch=true`;
+            // TODO: add speaker to the URL
+            // TODO: add looseSearch to the URL
+
+            let response = undefined;
+            try {
+                response = await fetch(URL);
+            } catch (error) {
+                console.error('Request error:', error);
+                return;
+            }
+
+            if (!response || !response.ok || !response.body) {
+                console.error('Response not ok');
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            let buffer = '';
+
+            while (true) {
+                const {done, value} = await reader.read();
+
+                if (done)
+                    break;
+
+                // Decode the chunk and add it to the buffer
+                buffer += decoder.decode(value, {stream: true});
+
+                // Process the complete JSON object from the buffer
+                let boundary = buffer.indexOf('\n');
+
+
+                while (boundary !== -1) {
+                    const chunk = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 1);
+
+                    if (chunk.trim()) {
+                        let parsedChunk = undefined;
+                        try {
+                            parsedChunk = JSON.parse(chunk);
+                        } catch (e) {
+                            console.error("Error parsing chunk:", e);
+                            continue;
+                        }
+
+                        const highlights: Highlight[] = parsedChunk.highlights;
+                        console.log("Highlights", highlights.length);
+                        for (const highlight of highlights) {
+
+                            // invert the y coordinates in the highlight rectangles
+                            for (const rect of highlight.rects) {
+                                let page = rect.page;
+                                let pages = this.pdfViewer?._pages;
+                                if (!pages) continue;
+                                let height = pages[page].viewport.viewBox[3];
+                                rect.coordinates.forEach(coordinate => {
+                                    coordinate.y0 = height - coordinate.y0;
+                                    coordinate.y1 = height - coordinate.y1;
+                                });
+                            }
+
+                            const rects = highlight.rects;
+
+                            if (!rects || rects.length == 0 || !rects[0].coordinates) continue;
+
+                            this.highlights.push(new PdfHighlight(rects));
+
+                            for (const rect of rects) {
+                                // Add the highlight to the PDF
+                                let quadPoints = rect.coordinates.map(coordinate => {
+                                    return [
+                                        coordinate.x0, coordinate.y0,
+                                        coordinate.x1, coordinate.y0,
+                                        coordinate.x0, coordinate.y1,
+                                        coordinate.x1, coordinate.y1
+                                    ];
+                                });
+
+                                this.pdfAnnotationFactory?.createHighlightAnnotation(
+                                    {
+                                        page: rect.page,
+                                        quadPoints: quadPoints.flat(),
+                                        opacity: 0.5,
+                                        color: {r: 255, g: 255, b: 0},
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    boundary = buffer.indexOf('\n');
+                }
+            }
         }
+
+        // sort the highlights by the page number and the y coordinate of the first rectangle (reverse order)
+        this.highlights.sort((a, b) => {
+            if (a.rects[0].page != b.rects[0].page) return a.rects[0].page - b.rects[0].page;
+            return b.rects[0].coordinates[0].y0 - a.rects[0].coordinates[0].y0;
+        });
+
+
+        console.log("Preparing to set the document");
+        await this.pdfjsLib.getDocument({
+            data: this.pdfAnnotationFactory?.write().slice(0)
+        }).promise.then(async (pdf: any) => {
+            console.log("Setting document");
+            this.pdfViewer?.setDocument(pdf);
+            console.log("Document set");
+        });
+
+        this.total = this.highlights.length;
+
+        console.log("Done");
+        //this.touched = true;
     }
 
     onMatchesFound = (event: any) => {
+        console.log("onMatchesFound", event);
         if (event.matchesCount.total == 0) {
             console.error('calling onMatchesFound with no matches, should not happen');
             return;
@@ -339,7 +426,7 @@ export class PdfHighlights implements PdfHighlights {
         if (this.touched) {
             this.total = event.matchesCount.total;
             this.touched = false;
-            this._createPageMatches(event.source.pageMatches);
+            //this._createPageMatches(event.source.pageMatches);
             this.index = 0;
             this.prepHighlightBeforeScrolling('find');
         }
@@ -360,16 +447,28 @@ export class PdfHighlights implements PdfHighlights {
         this._reset();
     }
 
-    clearMatches = () => {
+    clearMatches = async () => {
         this._reset();
-        this.eventBus?.dispatch('find', {
-            source: this.source,
-            type: "clear"
-        })
+        const existingAnnotations = await this.pdfAnnotationFactory?.getAnnotations();
+        if (!existingAnnotations) return;
+        const flattenedAnnotations = existingAnnotations.flat();
+        if (flattenedAnnotations && flattenedAnnotations.length > 0) {
+            const annotationIdsToDelete = flattenedAnnotations.map(annot => annot.id);
+            const deletePromises = annotationIdsToDelete.map(annotationId => this.pdfAnnotationFactory?.deleteAnnotation(annotationId));
+            await Promise.all(deletePromises);
+        }
     }
 
     scrollToHighlight: () => void = () => {
-        console.log("scrollToHighlight not implemented");
+        console.log("calling scrollToHighlight");
+        let currentHighlight = this.highlights[this.index];
+        let pageNumber = currentHighlight.rects[0].page;
+
+        let scrollOffsetY = currentHighlight.centerY - this.pdfViewer!.container.clientHeight / 1.8;
+        this.pdfViewer!.scrollPageIntoView({
+            pageNumber: pageNumber, // the page number containing the highlight
+            destArray: [null, {name: 'XYZ'}, 0, scrollOffsetY, null] // scroll to the calculated Y offset
+        });
     }
 
     prepHighlightBeforeScrolling: (performedAction: 'find' | 'resize' | 'next' | 'prev') => void = () => {
@@ -378,23 +477,28 @@ export class PdfHighlights implements PdfHighlights {
 
     nextHighlight = () => {
         this.index = (this.index + 1) % this.total;
+        console.log(this.index);
         this._nextHighlight();
     }
 
     previousHighlight = () => {
         this.index = (this.index - 1 + this.total) % this.total;
+        console.log(this.index);
         this._previousHighlight();
     }
 
     _nextHighlight: () => void = () => {
-        console.log("_nextHighlight not implemented");
+        console.log("Calling _nextHighlight");
+        this.scrollToHighlight();
     }
 
     _previousHighlight: () => void = () => {
-        console.log("_previousHighlight not implemented");
+        console.log("Calling _previousHighlight");
+        this.scrollToHighlight();
     }
 
     displayedHighlights = () => {
+        console.log("Calling displayedHighlights");
         if (this.search().length <= 2) {
             return ""
         } else if (this.total == 0) {

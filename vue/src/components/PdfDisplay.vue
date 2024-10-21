@@ -9,6 +9,7 @@ import * as pdfjs from 'pdfjs-dist';
 import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer';
 import 'pdfjs-dist/build/pdf.worker.entry';
 import 'pdfjs-dist/web/pdf_viewer.css';
+import {AnnotationFactory} from 'annotpdf';
 import {Options, Vue} from 'vue-class-component';
 import {Ref, Watch} from 'vue-property-decorator';
 import {mapGetters, mapMutations} from 'vuex';
@@ -40,7 +41,10 @@ import {Pagination} from '@/types/Pagination';
       'updatePreviousHighlight',
       'updateScrollToHighlight',
       'updatePrepHighlightBeforeScrolling',
-      'updateNoMatchesCallback'
+      'updateNoMatchesCallback',
+      'updatePdfViewer',
+      'updatePdfJsLib',
+      'updatePdfAnnotationFactory'
     ]),
     ...mapMutations('documentPaginationModule', [
       'updatePageFunctions',
@@ -72,7 +76,7 @@ export default class PdfView extends Vue {
   pdf?: pdfjs.PDFDocumentProxy;
   eventBus?: pdfjsViewer.EventBus;
   pdfLinkService?: pdfjsViewer.PDFLinkService;
-  pdfFindController?: pdfjsViewer.PDFFindController;
+  pdfAnnotaionFactory?: AnnotationFactory;
   pdfViewer?: pdfjsViewer.PDFViewer;
   pdfSource?: string;
   previousWindowWidth = 1;
@@ -100,8 +104,8 @@ export default class PdfView extends Vue {
   }
 
   @Watch('currentPage') onPageChange() {
-    this.syncPageInput(this.currentPage);
-    this.pageChangingResolve(this.currentPage);
+    this.syncPageInput(this.updateMatchesCount);
+    //this.pageChangingResolve(this.currentPage);
   }
 
   mounted() {
@@ -135,26 +139,16 @@ export default class PdfView extends Vue {
       eventBus: this.eventBus
     });
 
-    this.pdfFindController = new pdfjsViewer.PDFFindController({
-      eventBus: this.eventBus,
-      linkService: this.pdfLinkService,
-      updateMatchesCountOnProgress: false
-    });
-
-    this.pdfFindController._scrollMatches = true;
-
     this.pdfViewer = new pdfjsViewer.PDFViewer({
       container: this.pdfContainer,
       eventBus: this.eventBus,
       linkService: this.pdfLinkService,
-      findController: this.pdfFindController
     });
 
     this.eventBus.on('pagesloaded', (event: any) => {
       this.calcualtePageDimensions();
-      this.calcualtePageDimensions();
       this.syncPageInput(this.getPage());
-      this.pageChangingResolve(this.getPage());
+      //this.pageChangingResolve(this.getPage());
 
       this.updatePageFunctions({
         getPage: this.getPage,
@@ -165,7 +159,7 @@ export default class PdfView extends Vue {
     });
 
     this.eventBus.on('textlayerrendered', (event: any) => {
-      this.textLayerRenderedResolve(event.pageNumber);
+      //this.textLayerRenderedResolve(event.pageNumber);
       if (this.firstLoading) {
         this.firstLoading = false;
         this.$emit('executeInitialSearch');
@@ -177,26 +171,21 @@ export default class PdfView extends Vue {
       this.pdfViewer!.currentScaleValue = 'page-width';
     });
 
-    this.eventBus.on('updatefindmatchescount', (event: any) => {
-      if (event.matchesCount.total == 0) {
-        this.pdfHighlights.onNoMatchesFound();
-        this.$emit('matchLoaded')
-      } else {
-        this.updateMatchesCount(event);
-      }
-    });
-
     pdfjs.getDocument({
       url: this.pdfSource!
-    }).promise.then((pdf) => {
+    }).promise.then(async (pdf) => {
       this.pdf = pdf;
       this.pdfViewer!.setDocument(pdf);
-      this.pdfFindController!.setDocument(pdf);
       this.pdfLinkService!.setViewer(this.pdfViewer);
       this.pdfLinkService!.setDocument(pdf, null);
 
+      await pdf.getData().then((data) => {
+        this.pdfAnnotaionFactory = new AnnotationFactory(data);
+      });
+
       this.pdfContainer.addEventListener('scroll', () => {
         this.calculateCurrentPage();
+        console.log("scrolling")
         this.documentPagination.pdfScrollPercent = (
             this.pdfContainer.scrollTop /
             (this.pdfContainer.scrollHeight - this.pdfContainer.clientHeight)
@@ -221,7 +210,8 @@ export default class PdfView extends Vue {
   }
 
   calculateCurrentPage() {
-    this.currentPage = this.pageDimensions.height == 0 ? 1 : Math.floor(this.pdfContainer.scrollTop / this.pageDimensions.height) + 1;
+    this.currentPage = 1;
+    this.currentPage = this.pageDimensions.height == 0 ? 1 : Math.round(this.pdfContainer.scrollTop / this.pageDimensions.height) + 1;
   }
 
   getPage() {
@@ -229,6 +219,7 @@ export default class PdfView extends Vue {
   }
 
   setPage(newPage: number) {
+    console.log("pdf display setPage", newPage)
     if (this.pdfViewer!.currentPageNumber != newPage) {
       this.pdfViewer!.currentPageNumber = newPage;
     }
@@ -251,6 +242,7 @@ export default class PdfView extends Vue {
     )
   }
 
+  /*
   // observes for highlight changes below current page
   async observeValidHighlightChanges() {
     // watch for changes where higlight class is added
@@ -286,7 +278,9 @@ export default class PdfView extends Vue {
     await this.highlightChangesPromise;
     observer.disconnect();
   }
+   */
 
+  /*
   addSelectedClassToCorrectElement(prev: boolean) {
     const highlights = this.pdfContainer.querySelectorAll(`.highlight`) as NodeListOf<HTMLElement>;
     // console.log('highlights', highlights)
@@ -355,7 +349,10 @@ export default class PdfView extends Vue {
       this.scrollToHighlight();
     }
   }
+   */
 
+
+  /*
   scrollToHighlight() {
     const highlightElement = this.pdfContainer.querySelector(`.current-selected-highlight`);
     // console.log(highlightElement)
@@ -372,7 +369,9 @@ export default class PdfView extends Vue {
       this.prepHighlightBeforeScrolling('resize');
     }
   }
+   */
 
+  /*
   async prepHighlightBeforeScrolling(
       performedAction: 'find' | 'resize' | 'next' | 'prev'
   ) {
@@ -499,7 +498,9 @@ export default class PdfView extends Vue {
     }
 
   }
+   */
 
+  /*
   getDistOfElementsFromSelected(elements: NodeListOf<HTMLElement>): {
     element: HTMLElement,
     vertDistance: number,
@@ -558,6 +559,10 @@ export default class PdfView extends Vue {
     return distOfElementsFromSelected;
   }
 
+   */
+
+  /*
+
   nextHighlight() {
     this.$emit('loadingNewMatch')
 
@@ -588,6 +593,9 @@ export default class PdfView extends Vue {
     }
   }
 
+   */
+
+  /*
   previousHighlight() {
     this.$emit('loadingNewMatch')
     if (this.pdfHighlights.total < 2) {
@@ -617,6 +625,10 @@ export default class PdfView extends Vue {
     }
   }
 
+   */
+
+
+  /*
   async scrollPdfToPercent(percent: number) {
     this.scrollingToTranscriptScrollPosition = true;
     this.$emit('loadingNewMatch')
@@ -648,15 +660,23 @@ export default class PdfView extends Vue {
     this.$emit('matchLoaded')
   }
 
+   */
+
+
   initHighlightsParams() {
     this.updateEventBus(this.eventBus);
     this.updateSource(this);
+    /*
     this.updateNextHighlight(this.nextHighlight);
     this.updatePreviousHighlight(this.previousHighlight);
     this.pdfHighlights.onNoMatchesFound();
     this.updateScrollToHighlight(this.scrollToHighlight);
     this.updatePrepHighlightBeforeScrolling(this.prepHighlightBeforeScrolling);
     this.updateScrollPdfToPercent(this.scrollPdfToPercent);
+     */
+    this.updatePdfJsLib(pdfjs);
+    this.updatePdfViewer(this.pdfViewer);
+    this.updatePdfAnnotationFactory(this.pdfAnnotaionFactory);
   }
 }
 </script>

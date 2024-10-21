@@ -1,23 +1,4 @@
 <template>
-  <div class="pdf-viewer-container">
-
-    <!-- Display of original document -->
-    <PdfDisplay v-if="show === 'pdf'" :class="{ 'blur': loading || matchLoading, 'scrollable': show === 'pdf' }"
-                v-bind:meeting_id="meeting_id" v-bind:matchLoading="matchLoading" @loaded="handlePdfLoaded"
-                @matchLoaded="handleMatchLoaded"
-                @loadingNewMatch="newMatchLoading" @loading="handlePdfLoading"
-                @executeInitialSearch="executeInitialSearch"></PdfDisplay>
-    <!-- Display of transcript -->
-    <Transcript v-else :class="{ 'blur': loading, 'scrollable': show === 'transcript' }">
-    </Transcript>
-    <!-- Display of loading whell -->
-    <div class="loading-container" v-if="loading || matchLoading">
-      <div class="spinner-border" role="status">
-        <span class="sr-only">{{ $t('loading') }}</span>
-      </div>
-    </div>
-  </div>
-
   <!-- Toolbar -->
   <div class="toolbar-container">
     <!-- Toolbar title -->
@@ -115,15 +96,32 @@
         <i class="fas fa-arrow-right"></i>
       </button>
     </div>
+
   </div>
+  <!-- PDF / transcript container -->
+  <div class="pdf-viewer-container">
 
-
+    <!-- Display of original document -->
+    <PdfDisplay v-if="show === 'pdf'" :class="{ 'blur': loading || matchLoading, 'scrollable': show === 'pdf' }"
+                v-bind:meeting_id="meeting_id" v-bind:matchLoading="matchLoading" @loaded="handlePdfLoaded"
+                @matchLoaded="handleMatchLoaded"
+                @loadingNewMatch="newMatchLoading" @loading="handlePdfLoading"
+                @executeInitialSearch="executeInitialSearch"></PdfDisplay>
+    <!-- Display of transcript -->
+    <Transcript v-else :class="{ 'blur': loading, 'scrollable': show === 'transcript' }">
+    </Transcript>
+    <!-- Display of loading whell -->
+    <div class="loading-container" v-if="loading || matchLoading">
+      <div class="spinner-border" role="status">
+        <span class="sr-only">{{ $t('loading') }}</span>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style>
 
 .toolbar-tooltip {
-  position: absolute;
   transition: all 0.3s ease-in-out;
   display: grid;
 }
@@ -136,8 +134,7 @@
 .btn-tooltip {
   display: flex;
   padding: 0.8rem;
-  margin-left: 1.5rem;
-  margin-top: 1rem;
+  margin: 1rem;
   background-color: #708d81;
   color: #f0f7ee;
   border: none;
@@ -167,7 +164,7 @@
 }
 
 .tooltip-hidden {
-  opacity: 0;
+  display: none;
 }
 
 .btn-disabled {
@@ -218,8 +215,14 @@
   left: 1vw;
   margin: 1rem auto 0 auto;
   background-color: #f0f7ee;
-  border-radius: 10px !important;
+  border-radius: 5px !important;
   overflow: hidden;
+  scroll-behavior: smooth;
+}
+
+.page {
+  border: none !important;
+  margin: 1rem auto !important;
 }
 
 .transcript-container {
@@ -238,11 +241,12 @@
 .scrollable {
   height: 89vh;
   overflow: scroll;
-  border: 5px solid #f0f7ee;
+  border-top: 10px solid #f0f7ee;
+  border-bottom: 10px solid #f0f7ee;
 }
 
 .toolbar-container {
-  width:27%;
+  width: 27%;
   height: 89vh;
   position: absolute;
   right: 0;
@@ -380,13 +384,8 @@ input[type=number] {
 }
 
 @media (max-width: 1350px) {
-  .pdf-viewer-container {
-    display: flex;
-    flex-direction: column;
-  }
-
   .transcript-container {
-    position: relative;
+    position: absolute;
     margin: 1rem;
     left: 0;
     width: fit-content;
@@ -402,10 +401,9 @@ input[type=number] {
     top: 0;
     left: 0;
     height: fit-content;
-    margin: 1rem 1rem 0 1rem;
+    margin: 1rem;
     z-index: 5;
     display: grid;
-
     transition: all 0.2s ease-in-out;
   }
 
@@ -417,10 +415,23 @@ input[type=number] {
     font-size: 1rem;
   }
 
+  .pdf-container {
+    left: 0;
+    width: calc(100% - 2rem);
+    margin: 1rem;
+  }
+
+  .scrollable {
+    height: 70vh;
+  }
+
+  .pagination-control-container {
+    position: static;
+  }
+
   .transparent {
     background-color: transparent !important;
   }
-
 
   .language-control {
     display: flex;
@@ -522,24 +533,12 @@ export default class PdfView extends Vue {
   showTooltip: boolean = false;
 
   mounted(): void {
-    if (this.windowAllowsPdfDisplay()) this.handlePdfLoading();
-    this.show = this.windowAllowsPdfDisplay() ? 'pdf' : 'transcript';
+    this.handlePdfLoading();
+    this.show = 'pdf';
 
     window.addEventListener('resize', () => {
       this.windowWidth = window.innerWidth;
-      if (!this.windowAllowsPdfDisplay()) {
-        const choosePdfOption = document.getElementById('choosePdfOption') as HTMLOptionElement;
-        if (choosePdfOption !== null) {
-          choosePdfOption.disabled = true;
-        }
-        this.show = 'transcript';
-        this.handlePdfLoaded();
-      } else {
-        const choosePdfOption = document.getElementById('choosePdfOption') as HTMLOptionElement;
-        if (choosePdfOption !== null) {
-          choosePdfOption.disabled = false;
-        }
-      }
+      this.documentPagination.setPage(this.documentPagination.getPage());
     });
 
     window.addEventListener('scroll', () => {
@@ -557,19 +556,6 @@ export default class PdfView extends Vue {
   unmounted(): void {
     window.removeEventListener('resize', () => {
       this.windowWidth = window.innerWidth;
-      if (!this.windowAllowsPdfDisplay()) {
-        const choosePdfOption = document.getElementById('choosePdfOption') as HTMLOptionElement;
-        if (choosePdfOption !== null) {
-          choosePdfOption.disabled = true;
-        }
-        this.show = 'transcript';
-        this.handlePdfLoaded();
-      } else {
-        const choosePdfOption = document.getElementById('choosePdfOption') as HTMLOptionElement;
-        if (choosePdfOption !== null) {
-          choosePdfOption.disabled = false;
-        }
-      }
     });
 
     window.removeEventListener('scroll', () => {
@@ -577,7 +563,7 @@ export default class PdfView extends Vue {
     });
 
     this.updateSearch('');
-    this.updateMeetingId(undefined)
+    this.updateMeetingId(undefined);
     this.documentPagination.total = () => 1
   }
 
@@ -635,9 +621,8 @@ export default class PdfView extends Vue {
     this.loading = true;
 
     // get meeting as text with meeting_id and transcriptLanguage
-    axios.get(process.env.VUE_APP_API_URL + '/meetings/getMeetingAsText', {
+    axios.get(process.env.VUE_APP_API_URL + `/meetings/${this.meeting_id}/getMeetingAsText`, {
       params: {
-        meetingId: this.meeting_id,
         lang: this.transcriptLanguage,
         pageLang: this.$i18n.locale
       }
@@ -646,6 +631,7 @@ export default class PdfView extends Vue {
       this.updateOriginalTranscript({
         text: response.data.text,
         callback: !this.windowAllowsPdfDisplay() ? this.initialTranscriptSearchCallback : () => {
+          console.log("callback");
         }
       });
     }).catch((error) => {
@@ -669,7 +655,7 @@ export default class PdfView extends Vue {
 
   getWordsToHighlight(): string {
     // replace all non characters (except dot, quotes and slovenian characters) with space, then remove all double spaces
-    return this.wordsToHighlight.replace(/\s+/g, " ").trim();
+    return this.wordsToHighlight.trim();
   }
 
   initStoreParams(): void {
@@ -739,17 +725,13 @@ export default class PdfView extends Vue {
           this.searchedWordsList.push(value);
       }
     }
-    if (this.searchParams.speaker) {
-      this.searchParams.speaker.names.forEach((name: string) => {
-        this.searchedWordsList.push(name);
-      });
-    }
+    // TODO: add speakers
   }
 
   executeInitialSearch() {
     this.firstLoad = false;
 
-    let firstQuery = this.searchParams.words ?? "";
+    let firstQuery = this.searchParams.words.replaceAll("AND", "OR").replaceAll(/\"|\'/g, "") ?? "";
     firstQuery += this.searchParams.place?.names ? " " + Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" ") : "";
     firstQuery += this.searchParams.speaker ? " " + this.searchParams.speaker?.names.join(" ") : "";
 

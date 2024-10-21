@@ -7,8 +7,8 @@ interface TranscriptHighlightsState {
 }
 
 const mutations: MutationTree<TranscriptHighlightsState> = {
-    findMatches(state: TranscriptHighlightsState) {
-        state.instance.findMatches();
+    async findMatches(state: TranscriptHighlightsState) {
+        await state.instance.findMatches();
     },
     previousHighlight(state: TranscriptHighlightsState) {
         state.instance.previousHighlight();
@@ -25,10 +25,10 @@ const mutations: MutationTree<TranscriptHighlightsState> = {
     updateLanguage(state: TranscriptHighlightsState, language: string | undefined) {
         state.instance.language = language;
     },
-    updateOriginalTranscript(state: TranscriptHighlightsState, params: { text: string, callback: () => void }) {
+    async updateOriginalTranscript(state: TranscriptHighlightsState, params: { text: string, callback: () => void }) {
         state.instance.originalTranscript = params.text;
         params.callback();
-        state.instance.findMatches();
+        await state.instance.findMatches();
     },
     updateContainer(state: TranscriptHighlightsState, container: HTMLDivElement) {
         state.instance.container = container;
