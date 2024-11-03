@@ -44,16 +44,12 @@ const mutations: MutationTree<PdfHighlightsState> = {
     },
     updatePdfAnnotationFactory(state: PdfHighlightsState, pdfAnnotationFactory: AnnotationFactory) {
         state.instance.pdfAnnotationFactory = pdfAnnotationFactory;
-        state.instance.originalPdfData = pdfAnnotationFactory?.write().slice(0);
+    },
+    updateOriginalPdfData(state: PdfHighlightsState, originalPdfData: Uint8Array) {
+        state.instance.originalPdf = originalPdfData;
     },
     updateSource(state: PdfHighlightsState, source: any) {
         state.instance.source = source;
-    },
-    updateNextHighlight(state: PdfHighlightsState, nextHighlight: () => void) {
-        state.instance._nextHighlight = nextHighlight;
-    },
-    updatePreviousHighlight(state: PdfHighlightsState, previousHighlight: () => void) {
-        state.instance._previousHighlight = previousHighlight;
     },
     updateScrollToHighlight(state: PdfHighlightsState, scrollToHighlight: () => void) {
         state.instance.scrollToHighlight = scrollToHighlight;

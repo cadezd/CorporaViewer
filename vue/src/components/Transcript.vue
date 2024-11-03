@@ -104,46 +104,27 @@ export default class Transcript extends Vue {
 
     if (this.transcriptHighlights.total === 0) {
       this.transcriptContainer.scrollTop = this.pagination.pdfScrollPercent * (this.transcriptContainer.scrollHeight - this.transcriptContainer.clientHeight);
-    } else if (this.pdfHighlights.total === 0 && this.transcriptHighlights.total > 0) {
-      this.findClosestHighlight();
     } else {
-      this.transcriptContainer.scrollTop = this.pagination.pdfScrollPercent * (this.transcriptContainer.scrollHeight - this.transcriptContainer.clientHeight);
-      this.findClosestHighlight();
+      this.findHighlight();
     }
   }
 
-  findClosestHighlight() {
+  findHighlight() {
     const highlights = this.transcriptContainer.querySelectorAll('.transcript-highlight') as NodeListOf<HTMLElement>;
 
-    if (highlights.length === 0) {
+    if (highlights.length === 0)
       return;
-    }
 
-    // closest highlight to the center point of the container
-    let containerCenterPoint = {
-      verticalOffset: this.transcriptContainer.getBoundingClientRect().top + (this.transcriptContainer.clientHeight / 2),
-      horizontalOffset: this.transcriptContainer.getBoundingClientRect().left + (this.transcriptContainer.clientWidth / 2)
-    };
-    let closest = Array.from(highlights).reduce((prev, curr) => {
-      const prevVertDist = Math.abs(prev.getBoundingClientRect().top - containerCenterPoint.verticalOffset);
-      const currVertDist = Math.abs(curr.getBoundingClientRect().top - containerCenterPoint.verticalOffset);
-      const prevHorizDist = Math.abs(prev.getBoundingClientRect().left - containerCenterPoint.horizontalOffset);
-      const currHorizDist = Math.abs(curr.getBoundingClientRect().left - containerCenterPoint.horizontalOffset);
-      return (
-          prevVertDist < currVertDist ||
-          (prevVertDist === currVertDist && prevHorizDist < currHorizDist)
-      ) ? prev : curr;
-    });
+    const currentIndex = Math.min(Math.max(this.pdfHighlights.index, 0), highlights.length - 1);
+    const currentHighlight = highlights[currentIndex];
 
-    let closestIndex = Array.from(highlights).indexOf(closest);
-
-    closest.scrollIntoView({
+    currentHighlight.scrollIntoView({
       behavior: 'instant' as ScrollBehavior,
       block: 'center',
       inline: 'center'
     });
 
-    this.transcriptHighlights.updateAndApplyIndexChanges(closestIndex);
+    this.transcriptHighlights.updateAndApplyIndexChanges(currentIndex);
   }
 
   initHighlightsParams() {

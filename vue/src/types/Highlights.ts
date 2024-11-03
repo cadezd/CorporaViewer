@@ -4,57 +4,98 @@ import {Highlight} from "@/types/Highlight";
 import {AnnotationFactory} from 'annotpdf';
 import {Rect} from "@/types/Rect";
 
-export interface Highlights {
+export abstract class HighlightsAbstract {
 
     // variables
     meetingId?: string;
     language?: string;
-    search: () => string;
-    index: number;
-    touched: boolean;
-    total: number;
+    abstract search: () => string;
+    index?: number;
+    touched?: boolean;
+    total?: number;
+
+    /**
+     * Generator function to stream responses from fetch calls.
+     *
+     * @param {Function} fetchcall - The fetch call to make. Should return a response with a readable body stream.
+     * @returns {AsyncGenerator<string>} An async generator that yields strings from the response stream.
+     */
+    async* streamingFetch(fetchcall: Function): AsyncIterableIterator<any> {
+
+        const response = await fetchcall();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = '';
+
+        while (true) {
+            // wait for next encoded chunk
+            const {done, value} = await reader.read();
+            // check if stream is done
+            if (done) break;
+
+            // Decode the chunk and add it to the buffer
+            buffer += decoder.decode(value, {stream: true});
+
+            // Process the complete JSON object from the buffer
+            let boundary = buffer.indexOf('\n');
+            while (boundary !== -1) {
+                const chunk = buffer.slice(0, boundary);
+                buffer = buffer.slice(boundary + 1);
+                if (chunk.trim()) {
+                    let parsedChunk = undefined;
+                    try {
+                        parsedChunk = JSON.parse(chunk);
+                        // Yield the parsed chunk
+                        console.log(parsedChunk);
+                        yield parsedChunk;
+                    } catch (e) {
+                        console.error("Error parsing chunk:", e);
+                        continue;
+                    }
+                }
+                boundary = buffer.indexOf('\n');
+            }
+        }
+    }
 
     // functions
-    findMatches: () => void;
-    clearMatches: () => void;
-    scrollToHighlight: (...params: any) => void;
-    nextHighlight: () => void;
-    previousHighlight: () => void;
+    abstract findMatches: () => void;
+    abstract clearMatches: () => void;
+    abstract scrollToHighlight: (...params: any) => void;
+    abstract nextHighlight: () => void;
+    abstract previousHighlight: () => void;
 }
 
 // -----------------------------
 // Transcript highlights
 // -----------------------------
 
-export interface TranscriptHighlights extends Highlights {
+export abstract class TranscriptHighlightsAbstract extends HighlightsAbstract {
     // variables
     highlights?: NodeListOf<Element>;
     container?: HTMLDivElement;
-    transcript: string;
-    originalTranscript: string;
+    transcript?: string;
+    originalTranscript?: string;
 
     // functions
-    applyTranscript: () => void;
+    abstract applyTranscript: () => void;
 
     // callbacks
-    updateTranscriptIndex: (index: number) => void;
-    updateTranscriptTotal: (total: number) => void;
+    abstract updateTranscriptIndex: (index: number) => void;
+    abstract updateTranscriptTotal: (total: number) => void;
 }
 
-export class TranscriptHighlights implements TranscriptHighlights {
+export class TranscriptHighlights extends TranscriptHighlightsAbstract {
 
     static create(): TranscriptHighlights {
         return reactive(new TranscriptHighlights()) as TranscriptHighlights;
     }
 
-    meetingId?: string;
-    language?: string;
     search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
     total: number = 0;
-    highlights?: NodeListOf<Element>;
-    container?: HTMLDivElement;
     transcript: string = "";
     originalTranscript: string = "";
 
@@ -85,87 +126,37 @@ export class TranscriptHighlights implements TranscriptHighlights {
         if (this.search().length <= 2)
             return;
 
-
-        let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
-        if (this.language) URL += `&lang=${this.language}`;
-
-        URL += `&looseSearch=true`;
-        // TODO: add speaker to the URL
-        // TODO: add looseSearch to the URL
-
-        let response = undefined;
-        try {
-            response = await fetch(URL);
-        } catch (error) {
-            console.error('Request error:', error);
-            return;
-        }
-
-        if (!response || !response.ok || !response.body) {
-            console.error('Response not ok');
-            return;
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-
-        let buffer = '';
-
         let transcriptContent = new DOMParser().parseFromString(this.transcript, 'text/html');
 
-        while (true) {
-            const {done, value} = await reader.read();
+        let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
+        if (this.language)
+            URL += `&lang=${this.language}`;
 
-            if (done)
-                break;
+        for await (const parsedChunk of super.streamingFetch(() => fetch(URL))) {
+            const highlights: Highlight[] = parsedChunk.highlights;
+            for (const highlight of highlights) {
 
-            // Decode the chunk and add it to the buffer
-            buffer += decoder.decode(value, {stream: true});
-
-            // Process the complete JSON object from the buffer
-            let boundary = buffer.indexOf('\n');
-
-
-            while (boundary !== -1) {
-                const chunk = buffer.slice(0, boundary);
-                buffer = buffer.slice(boundary + 1);
-
-                if (chunk.trim()) {
-                    let parsedChunk = undefined;
-                    try {
-                        parsedChunk = JSON.parse(chunk);
-                    } catch (e) {
-                        console.error("Error parsing chunk:", e);
-                        continue;
-                    }
-
-                    const highlights: Highlight[] = parsedChunk.highlights;
-
-                    for (const highlight of highlights) {
-                        const firstChild = transcriptContent.getElementById(highlight.ids[0]);
-                        if (!firstChild) {
-                            console.error("Element not found");
-                            continue;
-                        }
-
-                        const newParent = transcriptContent.createElement('span');
-                        newParent.classList.add('transcript-highlight');
-
-                        firstChild.parentNode?.insertBefore(newParent, firstChild);
-
-                        highlight.ids.forEach((id: string) => {
-                            const element = transcriptContent.getElementById(id);
-                            if (element) {
-                                const prevTextNode = element.previousSibling;
-                                if (prevTextNode && prevTextNode.nodeType === Node.TEXT_NODE) {
-                                    newParent.appendChild(prevTextNode);
-                                }
-                                newParent.appendChild(element);
-                            }
-                        });
-                    }
+                const firstId = highlight.ids[0];
+                const firstChild = transcriptContent.getElementById(firstId);
+                if (!firstChild) {
+                    console.error("Element not found");
+                    continue;
                 }
-                boundary = buffer.indexOf('\n');
+
+                const newParent = transcriptContent.createElement('span');
+                newParent.classList.add('transcript-highlight');
+                firstChild.parentNode?.insertBefore(newParent, firstChild);
+
+                highlight.ids.forEach((id: string) => {
+                    const element = transcriptContent.getElementById(id);
+                    if (element) {
+                        const prevTextNode = element.previousSibling;
+                        if (prevTextNode && prevTextNode.nodeType === Node.TEXT_NODE) {
+                            newParent.appendChild(prevTextNode);
+                        }
+                        newParent.appendChild(element);
+                    }
+                });
             }
         }
 
@@ -175,6 +166,7 @@ export class TranscriptHighlights implements TranscriptHighlights {
             this._saveHighlights(true);
         }
     }
+
 
     private _saveHighlights = (shouldScrollToHighlight: boolean) => {
         this.highlights = this.container?.querySelectorAll(`.transcript-highlight`);
@@ -193,7 +185,7 @@ export class TranscriptHighlights implements TranscriptHighlights {
         }
     }
 
-    async clearMatches() {
+    clearMatches = async () => {
         this.transcript = this.originalTranscript;
         if (this.container) this.container.innerHTML = this.transcript;
         this.highlights = undefined;
@@ -226,7 +218,9 @@ export class TranscriptHighlights implements TranscriptHighlights {
         if (this.container) {
             this.container.innerHTML = this.transcript;
             this._saveHighlights(false);
-        } else console.error("container not defined");
+        } else {
+            console.error("container not defined");
+        }
     }
 }
 
@@ -236,185 +230,159 @@ export class TranscriptHighlights implements TranscriptHighlights {
 
 
 export class PdfHighlight {
+    id: string;
     rects: Rect[];
     height: number;
     centerY: number;
 
-    constructor(rects: Rect[]) {
+    constructor(id: string, rects: Rect[]) {
+        this.id = id;
         this.rects = rects;
-        this.height = rects[rects.length - 1].coordinates[0].y1 - rects[0].coordinates[0].y0;
+        this.height = rects[0].coordinates[rects[0].coordinates.length - 1].y1 - rects[0].coordinates[0].y0;
         this.centerY = rects[0].coordinates[0].y0 - this.height / 2;
     }
 }
 
-export interface PdfHighlights extends Highlights {
+export abstract class PdfHighlightsAbstract extends HighlightsAbstract {
     // variables
-    highlights: PdfHighlight[];
+    highlights: PdfHighlight[] = [];
     eventBus?: PdfJsViewer.EventBus;
     pdfViewer?: PdfJsViewer.PDFViewer;
     pdfAnnotationFactory?: AnnotationFactory;
-    pdfData?: Uint8Array;
     pdfjsLib?: any;
     source?: any;
 
     // functions
-    onMatchesFound: (event: any) => void;
-    onNoMatchesFound: () => void;
-    refreshHighlights: () => void;
-    displayedHighlights: () => string;
+    abstract onMatchesFound: (event: any) => void;
+    abstract onNoMatchesFound: () => void;
+    abstract refreshHighlights: () => void;
+    abstract displayedHighlights: () => string;
 
     // callbacks
-    scrollToHighlight: () => void;
-    prepHighlightBeforeScrolling: (performedAction: 'find' | 'resize' | 'next' | 'prev') => void;
-    _nextHighlight: () => void;
-    _previousHighlight: () => void;
+    abstract scrollToHighlight: () => void;
+    abstract prepHighlightBeforeScrolling: (performedAction: 'find' | 'resize' | 'next' | 'prev') => void;
+
 }
 
-export class PdfHighlights implements PdfHighlights {
+export class PdfHighlights extends PdfHighlightsAbstract {
 
     static create(): PdfHighlights {
         return reactive(new PdfHighlights()) as PdfHighlights;
     }
 
     // variables
-    meetingId?: string;
-    language?: string;
     search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
     total: number = 0;
-    eventBus?: PdfJsViewer.EventBus;
-    source?: any;
+    eventBus?: PdfJsViewer.EventBus = undefined;
+    pdfViewer?: PdfJsViewer.PDFViewer = undefined;
+    pdfAnnotationFactory?: AnnotationFactory = undefined;
+    originalPdf?: Uint8Array = undefined;
 
-    // functions
+    updateIndexChanges(index: number) {
+        this.index = index;
+    }
+
+    updateTotalChanges(total: number) {
+        this.total = total;
+    }
+
+    saveView = () => {
+        const pageHeight = this.pdfViewer!.container.scrollHeight / this.pdfViewer!.pagesCount;
+        const currentPage = pageHeight == 0 ? 1 : Math.round(this.pdfViewer!.container.scrollTop / pageHeight) + 1;
+        const offsetY = this.pdfViewer!.container.scrollTop - (currentPage - 1) * pageHeight;
+        return {
+            pageNumber: currentPage,
+            offsetY: offsetY
+        };
+    }
+
+    restoreView(view: {
+        pageNumber: number | undefined;
+        offsetY: number | undefined;
+    }) {
+
+        if (view.pageNumber === undefined || view.offsetY === undefined)
+            return;
+
+        // Restore the page (disable smooth scrolling for a moment)
+        const pageHeight = this.pdfViewer!.container.scrollHeight / this.pdfViewer!.pagesCount;
+        this.pdfViewer!.container.scrollTop = (view.pageNumber! - 1) * pageHeight + view.offsetY!;
+
+    }
+
     findMatches = async () => {
-        this.highlights = [];
-        if (this.search().length <= 2) {
-            await this.clearMatches();
-        } else {
+        await this.clearMatches();
+
+        if (this.search().length > 2) {
             let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
 
-            console.log(URL);
-            if (this.language) URL += `&lang=${this.language}`;
-
-            console.log(this.language);
-            URL += `&looseSearch=true`;
-            // TODO: add speaker to the URL
-            // TODO: add looseSearch to the URL
-
-            let response = undefined;
-            try {
-                response = await fetch(URL);
-            } catch (error) {
-                console.error('Request error:', error);
-                return;
-            }
-
-            if (!response || !response.ok || !response.body) {
-                console.error('Response not ok');
-                return;
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            let buffer = '';
-
-            while (true) {
-                const {done, value} = await reader.read();
-
-                if (done)
-                    break;
-
-                // Decode the chunk and add it to the buffer
-                buffer += decoder.decode(value, {stream: true});
-
-                // Process the complete JSON object from the buffer
-                let boundary = buffer.indexOf('\n');
-
-
-                while (boundary !== -1) {
-                    const chunk = buffer.slice(0, boundary);
-                    buffer = buffer.slice(boundary + 1);
-
-                    if (chunk.trim()) {
-                        let parsedChunk = undefined;
-                        try {
-                            parsedChunk = JSON.parse(chunk);
-                        } catch (e) {
-                            console.error("Error parsing chunk:", e);
-                            continue;
-                        }
-
-                        const highlights: Highlight[] = parsedChunk.highlights;
-                        console.log("Highlights", highlights.length);
-                        for (const highlight of highlights) {
-
-                            // invert the y coordinates in the highlight rectangles
-                            for (const rect of highlight.rects) {
-                                let page = rect.page;
-                                let pages = this.pdfViewer?._pages;
-                                if (!pages) continue;
-                                let height = pages[page].viewport.viewBox[3];
-                                rect.coordinates.forEach(coordinate => {
-                                    coordinate.y0 = height - coordinate.y0;
-                                    coordinate.y1 = height - coordinate.y1;
-                                });
-                            }
-
-                            const rects = highlight.rects;
-
-                            if (!rects || rects.length == 0 || !rects[0].coordinates) continue;
-
-                            this.highlights.push(new PdfHighlight(rects));
-
-                            for (const rect of rects) {
-                                // Add the highlight to the PDF
-                                let quadPoints = rect.coordinates.map(coordinate => {
-                                    return [
-                                        coordinate.x0, coordinate.y0,
-                                        coordinate.x1, coordinate.y0,
-                                        coordinate.x0, coordinate.y1,
-                                        coordinate.x1, coordinate.y1
-                                    ];
-                                });
-
-                                this.pdfAnnotationFactory?.createHighlightAnnotation(
-                                    {
-                                        page: rect.page,
-                                        quadPoints: quadPoints.flat(),
-                                        opacity: 0.5,
-                                        color: {r: 255, g: 255, b: 0},
-                                    },
-                                );
-                            }
-                        }
+            for await (const parsedChunk of super.streamingFetch(() => fetch(URL))) {
+                const highlights: Highlight[] = parsedChunk.highlights;
+                for (const highlight of highlights) {
+                    const rects = highlight.rects;
+                    if (!rects || rects.length == 0 || !rects[0].coordinates) continue;
+                    // invert the y coordinates in the highlight rectangles
+                    for (const rect of highlight.rects) {
+                        let page = rect.page;
+                        let height = this.pdfViewer?._pages![page].viewport.viewBox[3];
+                        rect.coordinates.forEach(coordinate => {
+                            coordinate.y0 = height - coordinate.y0;
+                            coordinate.y1 = height - coordinate.y1;
+                        });
                     }
-                    boundary = buffer.indexOf('\n');
+                    this.highlights.push(new PdfHighlight(highlight.ids[0], rects));
+                    for (const rect of rects) {
+                        // Add the highlight to the PDF
+                        let quadPoints = rect.coordinates.map(coordinate => {
+                            return [
+                                coordinate.x0, coordinate.y0,
+                                coordinate.x1, coordinate.y0,
+                                coordinate.x0, coordinate.y1,
+                                coordinate.x1, coordinate.y1
+                            ];
+                        });
+                        this.pdfAnnotationFactory?.createHighlightAnnotation(
+                            {
+                                page: rect.page,
+                                quadPoints: quadPoints.flat(),
+                                opacity: 0.5,
+                                color: {r: 255, g: 255, b: 0},
+                            },
+                        );
+                    }
                 }
             }
+
+            // sort the highlights by their id
+            this.highlights.sort((a: PdfHighlight, b: PdfHighlight) => {
+                return a.id.localeCompare(b.id, undefined, {numeric: true});
+            });
         }
 
-        // sort the highlights by the page number and the y coordinate of the first rectangle (reverse order)
-        this.highlights.sort((a, b) => {
-            if (a.rects[0].page != b.rects[0].page) return a.rects[0].page - b.rects[0].page;
-            return b.rects[0].coordinates[0].y0 - a.rects[0].coordinates[0].y0;
-        });
+        await this._displayPdf(true);
+    }
 
-
-        console.log("Preparing to set the document");
-        await this.pdfjsLib.getDocument({
-            data: this.pdfAnnotationFactory?.write().slice(0)
-        }).promise.then(async (pdf: any) => {
-            console.log("Setting document");
+    _displayPdf = async (shouldScrollToHighlight: boolean) => {
+        const savedView = this.saveView();
+        this.pdfjsLib.getDocument({
+            data: this.pdfAnnotationFactory!.write().slice(0)
+        }).promise.then((pdf: any) => {
             this.pdfViewer?.setDocument(pdf);
-            console.log("Document set");
+            this.pdfViewer?.eventBus.on("pagesloaded", () => {
+                if (this.highlights && this.highlights.length > 0) {
+                    // scroll to the first highlight
+                    this.updateIndexChanges(0);
+                    this.updateTotalChanges(this.highlights.length);
+                    if (shouldScrollToHighlight) this.scrollToHighlight();
+                } else {
+                    // restore the view
+                    this.restoreView(savedView);
+                }
+            });
+            this.touched = true;
         });
-
-        this.total = this.highlights.length;
-
-        console.log("Done");
-        //this.touched = true;
     }
 
     onMatchesFound = (event: any) => {
@@ -460,14 +428,23 @@ export class PdfHighlights implements PdfHighlights {
     }
 
     scrollToHighlight: () => void = () => {
-        console.log("calling scrollToHighlight");
-        let currentHighlight = this.highlights[this.index];
-        let pageNumber = currentHighlight.rects[0].page;
+        if (!this.highlights || this.highlights?.length === 0)
+            return;
 
-        let scrollOffsetY = currentHighlight.centerY - this.pdfViewer!.container.clientHeight / 1.8;
+        console.log("scrollToHighlight", this.index, this.highlights.length);
+
+        const currentHighlight = this.highlights[this.index];
+
+        console.log("scrollToHighlight", currentHighlight);
+
+        const pageNumber = currentHighlight.rects[0].page;
+        const containerHeight = this.pdfViewer!._pages![pageNumber].viewport.viewBox[3];
+        const centerOffsetY = currentHighlight.centerY + containerHeight / 7;
+
         this.pdfViewer!.scrollPageIntoView({
-            pageNumber: pageNumber, // the page number containing the highlight
-            destArray: [null, {name: 'XYZ'}, 0, scrollOffsetY, null] // scroll to the calculated Y offset
+            pageNumber: pageNumber + 1,
+            destArray: [null, {name: "XYZ"}, 0, centerOffsetY, null],
+            allowNegativeOffset: true
         });
     }
 
@@ -476,29 +453,17 @@ export class PdfHighlights implements PdfHighlights {
     }
 
     nextHighlight = () => {
-        this.index = (this.index + 1) % this.total;
-        console.log(this.index);
-        this._nextHighlight();
+        this.updateIndexChanges((this.index + 1) % this.total);
+        this.scrollToHighlight();
+
     }
 
     previousHighlight = () => {
-        this.index = (this.index - 1 + this.total) % this.total;
-        console.log(this.index);
-        this._previousHighlight();
-    }
-
-    _nextHighlight: () => void = () => {
-        console.log("Calling _nextHighlight");
-        this.scrollToHighlight();
-    }
-
-    _previousHighlight: () => void = () => {
-        console.log("Calling _previousHighlight");
+        this.updateIndexChanges((this.index - 1 + this.total) % this.total);
         this.scrollToHighlight();
     }
 
     displayedHighlights = () => {
-        console.log("Calling displayedHighlights");
         if (this.search().length <= 2) {
             return ""
         } else if (this.total == 0) {

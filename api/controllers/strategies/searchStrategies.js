@@ -350,7 +350,7 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
                     currentGroup.lemmas.push(hit._source.lemma);
 
 
-                    currentGroup.coordinates.push(...hit._source.coordinates);
+                    currentGroup.rects.push(...hit._source.coordinates);
 
                     return acc;
                 }, []) // Initialize acc as an empty array to hold word groups

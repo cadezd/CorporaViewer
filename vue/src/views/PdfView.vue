@@ -457,6 +457,8 @@ import PdfDisplay from '@/components/PdfDisplay.vue';
 import Transcript from '@/components/Transcript.vue';
 import 'pdfjs-dist/build/pdf.worker.entry';
 import 'pdfjs-dist/web/pdf_viewer.css';
+import * as pdfjs from 'pdfjs-dist';
+import {AnnotationFactory} from 'annotpdf';
 import {Options, Vue} from 'vue-class-component';
 import {Watch} from 'vue-property-decorator';
 import {mapGetters, mapMutations} from 'vuex';
@@ -485,10 +487,10 @@ import {Pagination} from '@/types/Pagination';
     ...mapGetters('documentPaginationModule', ['documentPaginationInstance']),
   },
   methods: {
-    ...mapMutations(['findMatches', 'nextHighlight', 'previousHighlight', 'updateSearch', 'updateMeetingId', 'updateLanguage']),
+    ...mapMutations(['findMatches', 'nextHighlight', 'previousHighlight', 'updateSearch', 'updateMeetingId', 'updateLanguage',]),
     ...mapMutations('searchParamsModule', ['']),
-    ...mapMutations('transcriptHighlightsModule', ['updateOriginalTranscript', 'setUpdateTranscriptIndex', 'setUpdateTranscriptTotal']),
-    ...mapMutations('pdfHighlightsModule', ['']),
+    ...mapMutations('transcriptHighlightsModule', ['updateOriginalTranscript', 'setUpdateTranscriptIndex', 'setUpdateTranscriptTotal',]),
+    ...mapMutations('pdfHighlightsModule', ['updatePdfAnnotationFactory']),
     ...mapMutations('documentPaginationModule', ['setPage', 'updatePageInputFunctions'])
   }
 })
@@ -550,6 +552,8 @@ export default class PdfView extends Vue {
     this.initStoreParams();
 
     this.parseSearchList();
+
+    this.getPDF();
     this.getTranscript();
   }
 
@@ -564,6 +568,9 @@ export default class PdfView extends Vue {
 
     this.updateSearch('');
     this.updateMeetingId(undefined);
+    this.updateLanguage(undefined);
+    this.updatePdfAnnotationFactory(undefined);
+    this.pdfHighlights.highlights = [];
     this.documentPagination.total = () => 1
   }
 
@@ -604,7 +611,6 @@ export default class PdfView extends Vue {
 
   @Watch('show') onShowChanged() {
     if (this.show === 'pdf') {
-      // console.log(this.transcriptHighlights)
       if (this.pdfHighlights.total === 0) {
         this.documentPagination.syncPdfToTranscriptScroll();
       } else if (this.transcriptHighlights.total === 0) {
@@ -617,9 +623,20 @@ export default class PdfView extends Vue {
     // switching to transcript logic is implemented in transcript container
   }
 
-  getTranscript() {
+  getPDF() {
     this.loading = true;
+    pdfjs.getDocument({
+      url: process.env.VUE_APP_API_URL + '/pdf/getById/' + this.meeting_id
+    }).promise.then(async (pdf: pdfjs.PDFDocumentProxy) => {
+      pdf.getData().then((data: Uint8Array) => {
+        this.updatePdfAnnotationFactory(new AnnotationFactory(data));
+      });
+    }).catch((error: any) => {
+      console.log(error)
+    });
+  }
 
+  getTranscript() {
     // get meeting as text with meeting_id and transcriptLanguage
     axios.get(process.env.VUE_APP_API_URL + `/meetings/${this.meeting_id}/getMeetingAsText`, {
       params: {
@@ -631,11 +648,10 @@ export default class PdfView extends Vue {
       this.updateOriginalTranscript({
         text: response.data.text,
         callback: !this.windowAllowsPdfDisplay() ? this.initialTranscriptSearchCallback : () => {
-          console.log("callback");
         }
       });
     }).catch((error) => {
-      // console.log(error)
+      console.log(error)
     })
   }
 
@@ -732,8 +748,8 @@ export default class PdfView extends Vue {
     this.firstLoad = false;
 
     let firstQuery = this.searchParams.words.replaceAll("AND", "OR").replaceAll(/\"|\'/g, "") ?? "";
-    firstQuery += this.searchParams.place?.names ? " " + Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" ") : "";
-    firstQuery += this.searchParams.speaker ? " " + this.searchParams.speaker?.names.join(" ") : "";
+    // firstQuery += this.searchParams.place?.names ? " " + Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" ") : "";
+    // firstQuery += this.searchParams.speaker ? " " + this.searchParams.speaker?.names.join(" ") : "";
 
     this.wordsToHighlight = firstQuery.trim();
   }
@@ -768,9 +784,11 @@ export default class PdfView extends Vue {
     return true
   }
 
+  /*
   transparentBackground() {
     return this.scrollHeight / window.innerHeight > 0.2;
   }
+   */
 
   toggleTooltip() {
     this.showTooltip = !this.showTooltip;

@@ -9,11 +9,10 @@ import * as pdfjs from 'pdfjs-dist';
 import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer';
 import 'pdfjs-dist/build/pdf.worker.entry';
 import 'pdfjs-dist/web/pdf_viewer.css';
-import {AnnotationFactory} from 'annotpdf';
 import {Options, Vue} from 'vue-class-component';
 import {Ref, Watch} from 'vue-property-decorator';
 import {mapGetters, mapMutations} from 'vuex';
-import {PdfHighlights} from '@/types/Highlights';
+import {PdfHighlights, TranscriptHighlights} from '@/types/Highlights';
 import {Pagination} from '@/types/Pagination';
 
 
@@ -29,6 +28,7 @@ import {Pagination} from '@/types/Pagination';
     },
   },
   computed: {
+    ...mapGetters('transcriptHighlightsModule', ['transcriptHighlightsInstance']),
     ...mapGetters('pdfHighlightsModule', ['pdfHighlightsInstance']),
     ...mapGetters('documentPaginationModule', ['documentPaginationInstance'])
   },
@@ -44,7 +44,8 @@ import {Pagination} from '@/types/Pagination';
       'updateNoMatchesCallback',
       'updatePdfViewer',
       'updatePdfJsLib',
-      'updatePdfAnnotationFactory'
+      'updatePdfAnnotationFactory',
+      'updateOriginalPdfData',
     ]),
     ...mapMutations('documentPaginationModule', [
       'updatePageFunctions',
@@ -60,6 +61,10 @@ import {Pagination} from '@/types/Pagination';
 export default class PdfView extends Vue {
   [x: string]: any;
 
+  get transcriptHighlights(): TranscriptHighlights {
+    return this.transcriptHighlightsInstance;
+  }
+
   get pdfHighlights(): PdfHighlights {
     return this.pdfHighlightsInstance;
   }
@@ -73,10 +78,8 @@ export default class PdfView extends Vue {
   meeting_id?: string;
   firstLoading = true;
 
-  pdf?: pdfjs.PDFDocumentProxy;
   eventBus?: pdfjsViewer.EventBus;
   pdfLinkService?: pdfjsViewer.PDFLinkService;
-  pdfAnnotaionFactory?: AnnotationFactory;
   pdfViewer?: pdfjsViewer.PDFViewer;
   pdfSource?: string;
   previousWindowWidth = 1;
@@ -85,6 +88,8 @@ export default class PdfView extends Vue {
   pageDimensions: { width: number, height: number } = {width: 0, height: 0};
   topScrollOffset: number = 0;
   currentPage: number = 1;
+
+  /*
   private pageChangingPromise: Promise<void> | undefined = undefined;
   private pageChangingResolve: ((pageNumber: number) => void) = (pageNumber: number) => {
   };
@@ -94,18 +99,18 @@ export default class PdfView extends Vue {
   private highlightChangesPromise: Promise<void> | undefined = undefined;
   private highlightChangesResolve: (() => void) = () => {
   };
+   */
 
   @Watch('matchLoading') onMatchLoadingChange() {
     if (!this.scrollingToTranscriptScrollPosition && !this.matchLoading && this.previousWindowWidth != window.outerWidth) {
       this.previousWindowWidth = window.outerWidth;
-      this.calcualtePageDimensions();
+      this.calculatePageDimensions();
       if (this.pdfHighlights.total > 0) this.pdfHighlights.refreshHighlights();
     }
   }
 
   @Watch('currentPage') onPageChange() {
     this.syncPageInput(this.updateMatchesCount);
-    //this.pageChangingResolve(this.currentPage);
   }
 
   mounted() {
@@ -114,8 +119,7 @@ export default class PdfView extends Vue {
 
       if (!this.matchLoading) {
         this.previousWindowWidth = this.pdfViewer!.currentScale;
-        this.calcualtePageDimensions();
-        if (this.pdfHighlights.total > 0) this.pdfHighlights.refreshHighlights();
+        this.calculatePageDimensions();
       }
     })
 
@@ -123,15 +127,18 @@ export default class PdfView extends Vue {
     this.initPdfViewer();
   }
 
+  /*
   scrollToPage(pageNumber: number) {
     this.pdfContainer.scrollTop = ((pageNumber - 1) * this.pageDimensions.height) + 5;
   }
+   */
 
   /**
    * Initializes the PDF viewer.
    */
-  initPdfViewer() {
+  async initPdfViewer() {
     this.$emit('loading');
+
 
     this.eventBus = new pdfjsViewer.EventBus();
 
@@ -145,62 +152,65 @@ export default class PdfView extends Vue {
       linkService: this.pdfLinkService,
     });
 
-    this.eventBus.on('pagesloaded', (event: any) => {
-      this.calcualtePageDimensions();
-      this.syncPageInput(this.getPage());
-      //this.pageChangingResolve(this.getPage());
-
-      this.updatePageFunctions({
-        getPage: this.getPage,
-        setPage: this.setPage,
-        total: this.total
-      });
-      this.$emit('loaded')
-    });
-
-    this.eventBus.on('textlayerrendered', (event: any) => {
-      //this.textLayerRenderedResolve(event.pageNumber);
-      if (this.firstLoading) {
-        this.firstLoading = false;
-        this.$emit('executeInitialSearch');
-      }
-    })
 
     this.eventBus.on('pagesinit', () => {
       this.resetPagination();
       this.pdfViewer!.currentScaleValue = 'page-width';
     });
 
-    pdfjs.getDocument({
-      url: this.pdfSource!
-    }).promise.then(async (pdf) => {
-      this.pdf = pdf;
+
+    this.eventBus.on('textlayerrendered', (event: any) => {
+      if (!this.pdfHighlights.pdfAnnotationFactory && this.firstLoading) {
+        this.firstLoading = false;
+        this.$emit('executeInitialSearch');
+      }
+    });
+
+    this.eventBus.on('pagesloaded', (event: any) => {
+      this.calculatePageDimensions();
+      this.syncPageInput(this.getPage());
+
+      this.updatePageFunctions({
+        getPage: this.getPage,
+        setPage: this.setPage,
+        total: this.total
+      });
+
+      if (this.pdfHighlights.highlights && this.pdfHighlights.highlights.length > 0) {
+        console.log("loading highlights...", this.pdfHighlights.highlights);
+        const currentIndex = Math.min(Math.max(this.transcriptHighlights.index, 0), this.pdfHighlights.highlights.length - 1);
+        this.pdfHighlights.updateIndexChanges(currentIndex);
+        this.pdfHighlights.scrollToHighlight();
+      }
+
+      this.$emit('loaded')
+    });
+
+    let src = this.pdfHighlights.pdfAnnotationFactory !== undefined ? {data: this.pdfHighlights.pdfAnnotationFactory!.write().slice(0)} : {url: this.pdfSource};
+    pdfjs.getDocument(src).promise.then(async (pdf) => {
       this.pdfViewer!.setDocument(pdf);
       this.pdfLinkService!.setViewer(this.pdfViewer);
       this.pdfLinkService!.setDocument(pdf, null);
 
-      await pdf.getData().then((data) => {
-        this.pdfAnnotaionFactory = new AnnotationFactory(data);
-      });
-
       this.pdfContainer.addEventListener('scroll', () => {
         this.calculateCurrentPage();
-        console.log("scrolling")
         this.documentPagination.pdfScrollPercent = (
             this.pdfContainer.scrollTop /
             (this.pdfContainer.scrollHeight - this.pdfContainer.clientHeight)
         );
       });
 
-      this.initHighlightsParams()
+      this.initHighlightsParams();
     });
   }
 
+  /*
   doClearInterval(interval: any) {
     clearInterval(interval);
   }
+   */
 
-  calcualtePageDimensions() {
+  calculatePageDimensions() {
     this.topScrollOffset = this.pdfContainer.scrollTop
 
     this.pageDimensions = {
@@ -219,7 +229,6 @@ export default class PdfView extends Vue {
   }
 
   setPage(newPage: number) {
-    console.log("pdf display setPage", newPage)
     if (this.pdfViewer!.currentPageNumber != newPage) {
       this.pdfViewer!.currentPageNumber = newPage;
     }
@@ -229,11 +238,15 @@ export default class PdfView extends Vue {
     return this.pdfViewer!.pagesCount;
   }
 
+  /*
   getPageOfElement(element: HTMLElement) {
     const topOffset = element.getBoundingClientRect().top + this.pdfContainer.scrollTop;
     return Math.floor(topOffset / this.pageDimensions.height) + 1;
   }
 
+   */
+
+  /*
   isElementOnPage(element: HTMLElement, pageNumber: number = this.getPage()) {
     const topOffset = element.getBoundingClientRect().top + this.pdfContainer.scrollTop;
     return this.getPageOfElement(element) == pageNumber || (
@@ -241,6 +254,7 @@ export default class PdfView extends Vue {
         (topOffset / this.pageDimensions.height) % 1 < 0.05
     )
   }
+   */
 
   /*
   // observes for highlight changes below current page
@@ -676,7 +690,6 @@ export default class PdfView extends Vue {
      */
     this.updatePdfJsLib(pdfjs);
     this.updatePdfViewer(this.pdfViewer);
-    this.updatePdfAnnotationFactory(this.pdfAnnotaionFactory);
   }
 }
 </script>
