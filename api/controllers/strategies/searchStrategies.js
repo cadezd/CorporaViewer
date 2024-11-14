@@ -28,6 +28,7 @@ class BaseSearchStrategy {
         const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang, looseSearch);
         const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang, looseSearch);
 
+
         const promises = [
             esClient.search({
                 size: chunkSize,

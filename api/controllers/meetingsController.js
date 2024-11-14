@@ -318,18 +318,22 @@ const getHighlights = async (req, res) => {
     const lang = req.query.lang;
     const looseSearch = req.query.looseSearch === "true";
 
-    if (!query) {
-        res.status(400).json({error: "Bad request, missing query"});
+    if (!query && !speaker) {
+        res.status(400).json({error: "Bad request, missing query or speaker"});
         return;
     }
 
     // Tokenize the query and separate it into words and phrases
-    const tokens = utils.tokenizeQuery(query)
-        .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
-        .map(tokens => tokens.map(token => token.replaceAll(/[^a-zA-Z0-9]/g, '')))
-        .map(tokens => tokens.filter(token => token.length > 0));
-    const words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
-    const phrases = tokens.filter(token => token.length > 1);
+    let words = undefined;
+    let phrases = undefined;
+    if (query) {
+        const tokens = utils.tokenizeQuery(query)
+            .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
+            .map(tokens => tokens.map(token => token.replaceAll(/[^a-zA-Z0-9]/g, '')))
+            .map(tokens => tokens.filter(token => token.length > 0));
+        words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
+        phrases = tokens.filter(token => token.length > 1);
+    }
 
     // Point in time id for words and sentences index
     let wordsIndexPITId = undefined;
@@ -362,6 +366,7 @@ const getHighlights = async (req, res) => {
         wordsIndexPITId = responses[0].id;
         sentenceIndexPITId = responses[1].id;
 
+
         while (true) {
             // Execute search using the chosen strategy and process the response
             const {
@@ -370,7 +375,6 @@ const getHighlights = async (req, res) => {
                 searchAfterWords: newSearchAfterWords,
                 searchAfterPhrases: newSearchAfterPhrases
             } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang, looseSearch, chunkSize, wordsIndexPITId, sentenceIndexPITId, searchAfterWords, searchAfterPhrases);
-
 
             // If there are no results, send empty response and break the loop
             if ((!singleWordsResponse || (singleWordsResponse && !singleWordsResponse.hits.hits.length)) &&
@@ -438,8 +442,55 @@ const getHighlights = async (req, res) => {
 }
 
 
+const getSpeakers = async (req, res) => {
+    const meetingId = req.params.meetingId;
+
+    if (!meetingId) {
+        res.status(400).json({error: "Bad request, missing meetingId"});
+        return;
+    }
+
+    try {
+        const response = await esClient.search({
+            index: process.env.MEETINGS_INDEX_NAME || 'meetings-index',
+            body: {
+                query: {
+                    bool: {
+                        filter: [
+                            {
+                                term: {
+                                    id: meetingId
+                                }
+                            }
+                        ]
+                    }
+                },
+                aggs: {
+                    unique_speakers: {
+                        terms: {
+                            field: "sentences.speaker.keyword",
+                            size: 10000
+                        }
+                    }
+                },
+                _source: false
+            }
+        });
+
+        const uniqueSpeakers = response.aggregations.unique_speakers.buckets.map(bucket => bucket.key);
+
+        res.json({
+            speakers: uniqueSpeakers
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({error: "Internal server error"});
+    }
+}
+
 module.exports = {
     getMeetingAsText,
     getHighlights,
+    getSpeakers,
     getPage
 };

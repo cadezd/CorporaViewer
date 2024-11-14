@@ -372,12 +372,17 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
                         "meeting_id": meetingId
                     }
                 },
-                // Add filters for speaker and language if provided
-                ...(speaker ? [{term: {"speaker": speaker}}] : []),
                 ...(lang ? [{term: {"lang": lang}}] : [])
             ],
-            should: wordsFilter,
-            minimum_should_match: 1
+            must: [
+                ...(speaker ? [{match_phrase: {"speaker": speaker}}] : []),
+                {
+                    bool: {
+                        should: wordsFilter,
+                        minimum_should_match: 1
+                    }
+                }
+            ]
         }
     };
 }
@@ -458,7 +463,6 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
         }
     });
 
-    // Build the query body
     let queryBody = {
         bool: {
             filter: [
@@ -466,11 +470,10 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                     term: {
                         "meeting_id": meetingId
                     }
-                },
-                // Add filters for speaker if provided
-                ...(speaker ? [{term: {"speaker": speaker}}] : []),
+                }
             ],
-            should: [
+            must: [
+                ...(speaker ? [{match_phrase: {"speaker": speaker}}] : []),
                 {
                     nested: {
                         path: "translations",
@@ -497,7 +500,7 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                                         order: "desc"
                                     }
                                 }
-                            ],
+                            ]
                         }
                     }
                 }
@@ -506,7 +509,7 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
     };
 
     // Remove null and undefined values from the query body
-    return cleanQuery(queryBody);
+    return queryBody;
 }
 
 /**
