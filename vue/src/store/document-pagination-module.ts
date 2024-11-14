@@ -15,7 +15,6 @@ const mutations: MutationTree<DocumentPaginationState> = {
         state.instance.getPage = pageFunctions.getPage;
         state.instance.setPage = pageFunctions.setPage;
         state.instance.total = pageFunctions.total;
-        console.log("updatePageFunctions", state.instance);
     },
     updatePageInputFunctions(state: DocumentPaginationState, pageInputFunctions: {
         getPageInput: () => number,
