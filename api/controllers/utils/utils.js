@@ -375,7 +375,15 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
                 ...(lang ? [{term: {"lang": lang}}] : [])
             ],
             must: [
-                ...(speaker ? [{match_phrase: {"speaker": speaker}}] : []),
+                ...(speaker ? [{
+                    match: {
+                        "speaker": {
+                            query: speaker,
+                            fuzziness: "2",
+                            operator: "and"
+                        }
+                    }
+                }] : []),
                 {
                     bool: {
                         should: wordsFilter,
@@ -473,7 +481,15 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                 }
             ],
             must: [
-                ...(speaker ? [{match_phrase: {"speaker": speaker}}] : []),
+                ...(speaker ? [{
+                    match: {
+                        "speaker": {
+                            query: speaker,
+                            fuzziness: "2",
+                            operator: "and"
+                        }
+                    }
+                }] : []),
                 {
                     nested: {
                         path: "translations",
