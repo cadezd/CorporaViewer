@@ -486,7 +486,6 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                         "speaker": {
                             query: speaker,
                             fuzziness: "2",
-                            operator: "and"
                         }
                     }
                 }] : []),
