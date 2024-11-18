@@ -45,6 +45,17 @@ export default createStore({
             this.commit("transcriptHighlightsModule/updateLanguage", language);
             this.commit("pdfHighlightsModule/updateLanguage", language);
         },
+        updateSpeaker(state: RootState, speaker: string | undefined) {
+            this.commit("transcriptHighlightsModule/updateSpeaker", speaker);
+            this.commit("pdfHighlightsModule/updateSpeaker", speaker);
+        },
+        updateLooseSearch(state: RootState, looseSearch: boolean) {
+            this.commit("transcriptHighlightsModule/updateLooseSearch", looseSearch);
+            this.commit("pdfHighlightsModule/updateLooseSearch", looseSearch);
+        },
+        reset(state: RootState) {
+            this.concat("transcriptHighlightsModule/clearMatches");
+        }
     },
     actions: {}
 })

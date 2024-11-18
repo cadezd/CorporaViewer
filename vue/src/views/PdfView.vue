@@ -39,9 +39,53 @@
         <h5>{{ $t('textSearch') }}</h5>
       </div>
       <div class="toolbar-content">
-        <Typeahead :placeholder="$t('textSearchPlaceholder')" :list="searchedWordsList" :displayFn="wordDisplayFn"
-                   :emptyItem="''" :getter="getWordsToHighlight" @selectedChange="handleWordSelected"
-                   @searchChange="handleSearchChanged"/>
+
+        <div class="row">
+          <div class="row col-md-9">
+            <!-- Search bar for searching the document content  -->
+            <input
+                type="text"
+                class="form-control input-field"
+                :placeholder="$t('searchBarPlaceholder')"
+                v-model="wordsToHighlight"
+                @keyup.enter="search"
+            />
+
+            <!-- Option list for choosing speaker -->
+            <Typeahead
+                :placeholder="$t('allSpeakers')"
+                :list="speakerList"
+                :displayFn="speakerDisplayFn"
+                :emptyItem="undefined"
+                :getter="getSelectedSpeaker"
+                @selectedChange="handleSearchChanged"
+            />
+
+
+          </div>
+          <div class="col-md-3 search-bar-button-container row">
+            <!-- Search button -->
+            <button class="col-md-5 btn btn-default" type="button" @click="searchForHighlights">
+              <i class="fa fa-search"></i>
+            </button>
+            <!-- Clear button-->
+            <button class="col-md-5 btn btn-default btn-warn" type="button" @click="clear">
+              <i class="fa fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="row py-2 my-2">
+          <input
+              type="checkbox"
+              id="looseSearch"
+              class="col-1 d-flex align-content-start"
+              placeholder="Loose search"
+              v-model="looseSearch"
+          />
+          <label for="looseSearch" class="col-11 d-flex align-content-start">{{ $t('looseSearch') }}</label>
+        </div>
+
         <div class="content-search-buttons">
           <div class="btn btn-primary content-search-button" @click="previousHighlightClick()"
                v-if="showNextPrevHighlightButtons()">
@@ -64,9 +108,6 @@
         </div>
       </div>
     </div>
-
-    <!-- TODO: dodaj izbiro govornikov -->
-    <!-- TODO: dodaj izbiro za "loose Search" -->
 
     <!-- Search info -->
     <div class="toolbar-tooltip">
@@ -100,15 +141,17 @@
   </div>
   <!-- PDF / transcript container -->
   <div class="pdf-viewer-container">
-
     <!-- Display of original document -->
-    <PdfDisplay v-if="show === 'pdf'" :class="{ 'blur': loading || matchLoading, 'scrollable': show === 'pdf' }"
+    <PdfDisplay v-if="show === 'pdf' && pdfHighlights.pdfAnnotationFactory"
+                :class="{ 'blur': loading || matchLoading, 'scrollable': show === 'pdf' }"
                 v-bind:meeting_id="meeting_id" v-bind:matchLoading="matchLoading" @loaded="handlePdfLoaded"
                 @matchLoaded="handleMatchLoaded"
                 @loadingNewMatch="newMatchLoading" @loading="handlePdfLoading"
                 @executeInitialSearch="executeInitialSearch"></PdfDisplay>
     <!-- Display of transcript -->
-    <Transcript v-else :class="{ 'blur': loading, 'scrollable': show === 'transcript' }">
+    <Transcript v-else-if="show === 'transcript'"
+                :class="{ 'blur': loading, 'scrollable': show === 'transcript' }"
+                @loaded="handlePdfLoaded">
     </Transcript>
     <!-- Display of loading whell -->
     <div class="loading-container" v-if="loading || matchLoading">
@@ -119,7 +162,60 @@
   </div>
 </template>
 
-<style>
+<style scoped>
+
+.search-bar-button-container {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-bar-button-container button {
+  padding: 10% 30% 10% 30%;
+  margin: auto;
+  border-radius: 20px;
+}
+
+.row {
+  display: flex !important;
+  margin: 0;
+  padding: 0;
+}
+
+.typeahead-container {
+  padding: 0;
+}
+
+.search-bar-button-container .btn {
+  padding: 0.5rem !important;
+  margin: 0.5rem !important;
+  width: 75% !important;
+  height: fit-content !important;
+}
+
+.search-bar-button-container .btn > i {
+  height: auto;
+}
+
+@media (max-width: 768px) {
+  .search-bar-button-container .btn {
+    width: fit-content !important;
+    padding: 0.5rem 1.5rem !important;
+  }
+}
+
+.search-bar-button-container .btn-default :disabled {
+  margin: 0px;
+  background-color: #f7f6ee;
+  border-color: #f0f7ee;
+  color: #1e1e24;
+}
+
+.search-bar-button-container .btn-warn {
+  background-color: #883636 !important;
+  color: #f0f7ee;
+}
+
 
 .toolbar-tooltip {
   transition: all 0.3s ease-in-out;
@@ -274,6 +370,10 @@
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.spinner-border {
+  color: #f0f7ee !important;
 }
 
 .loading-text {
@@ -457,12 +557,11 @@ import PdfDisplay from '@/components/PdfDisplay.vue';
 import Transcript from '@/components/Transcript.vue';
 import 'pdfjs-dist/build/pdf.worker.entry';
 import 'pdfjs-dist/web/pdf_viewer.css';
-import * as pdfjs from 'pdfjs-dist';
 import {AnnotationFactory} from 'annotpdf';
 import {Options, Vue} from 'vue-class-component';
 import {Watch} from 'vue-property-decorator';
+import {closest} from "fastest-levenshtein";
 import {mapGetters, mapMutations} from 'vuex';
-import {useDebounceFn} from '@vueuse/core'
 import axios from 'axios';
 import {SearchParams} from '@/types/SearchParams';
 import {PdfHighlights, TranscriptHighlights} from '@/types/Highlights';
@@ -487,7 +586,7 @@ import {Pagination} from '@/types/Pagination';
     ...mapGetters('documentPaginationModule', ['documentPaginationInstance']),
   },
   methods: {
-    ...mapMutations(['findMatches', 'nextHighlight', 'previousHighlight', 'updateSearch', 'updateMeetingId', 'updateLanguage',]),
+    ...mapMutations(['findMatches', 'nextHighlight', 'previousHighlight', 'updateSearch', 'updateMeetingId', 'updateLanguage', 'updateSpeaker', 'updateLooseSearch', 'reset']),
     ...mapMutations('searchParamsModule', ['']),
     ...mapMutations('transcriptHighlightsModule', ['updateOriginalTranscript', 'setUpdateTranscriptIndex', 'setUpdateTranscriptTotal',]),
     ...mapMutations('pdfHighlightsModule', ['updatePdfAnnotationFactory']),
@@ -516,7 +615,7 @@ export default class PdfView extends Vue {
 
   meeting_id?: string;
   transcriptLanguage: string = '';
-  searchedWordsList: string[] = [];
+  speakerList: string[] = [];
   firstLoad: boolean = false;
 
   show: string = ''
@@ -525,6 +624,9 @@ export default class PdfView extends Vue {
   nextMatchTimeout?: number;
 
   wordsToHighlight: string = '';
+  speaker?: string = '';
+  looseSearch: boolean = false;
+
   pageInput: number = 1;
   windowWidth: number = window.innerWidth;
   scrollHeight: number = 0;
@@ -534,7 +636,7 @@ export default class PdfView extends Vue {
 
   showTooltip: boolean = false;
 
-  mounted(): void {
+  async mounted(): Promise<void> {
     this.handlePdfLoading();
     this.show = 'pdf';
 
@@ -551,13 +653,12 @@ export default class PdfView extends Vue {
 
     this.initStoreParams();
 
-    this.parseSearchList();
-
-    this.getPDF();
+    await this.initSpeakerList();
+    await this.getPDF();
     this.getTranscript();
   }
 
-  unmounted(): void {
+  async unmounted(): Promise<void> {
     window.removeEventListener('resize', () => {
       this.windowWidth = window.innerWidth;
     });
@@ -569,9 +670,9 @@ export default class PdfView extends Vue {
     this.updateSearch('');
     this.updateMeetingId(undefined);
     this.updateLanguage(undefined);
-    this.updatePdfAnnotationFactory(undefined);
+    await this.updatePdfAnnotationFactory(undefined);
     this.pdfHighlights.highlights = [];
-    this.documentPagination.total = () => 1
+    this.documentPagination.reset();
   }
 
   handlePdfLoading() {
@@ -596,11 +697,31 @@ export default class PdfView extends Vue {
     }
   }
 
-  @Watch('wordsToHighlight') onWordsToHighlightChange() {
+  /*
+  //@Watch('wordsToHighlight')
+  onWordsToHighlightChange() {
     if (this.wordsToHighlight.length > 2 && this.windowAllowsPdfDisplay()) {
       this.newMatchLoading();
     }
-    if (this.windowAllowsPdfDisplay()) this.findMatches(this.wordsToHighlight);
+    if (this.windowAllowsPdfDisplay()) this.findMatches();
+    else this.transcriptHighlights.findMatches();
+  }
+   */
+
+  searchForHighlights() {
+    if (this.wordsToHighlight.length > 2 && this.windowAllowsPdfDisplay()) {
+      this.newMatchLoading();
+    }
+    if (this.windowAllowsPdfDisplay()) this.findMatches();
+    else this.transcriptHighlights.findMatches();
+  }
+
+  clear() {
+    this.looseSearch = false;
+    this.wordsToHighlight = '';
+    this.updateSpeaker(undefined);
+
+    if (this.windowAllowsPdfDisplay()) this.findMatches();
     else this.transcriptHighlights.findMatches();
   }
 
@@ -609,50 +730,50 @@ export default class PdfView extends Vue {
     this.updateLanguage(this.transcriptLanguage ? this.transcriptLanguage : undefined);
   }
 
+  @Watch('looseSearch') onLooseSearchChanged() {
+    this.updateLooseSearch(this.looseSearch);
+  }
+
   @Watch('show') onShowChanged() {
     if (this.show === 'pdf') {
       if (this.pdfHighlights.total === 0) {
         this.documentPagination.syncPdfToTranscriptScroll();
       } else if (this.transcriptHighlights.total === 0) {
         this.findMatches(this.wordsToHighlight);
-      } else {
-        this.pdfHighlights.refreshHighlights();
       }
     }
 
     // switching to transcript logic is implemented in transcript container
   }
 
-  getPDF() {
-    this.loading = true;
-    pdfjs.getDocument({
-      url: process.env.VUE_APP_API_URL + '/pdf/getById/' + this.meeting_id
-    }).promise.then(async (pdf: pdfjs.PDFDocumentProxy) => {
-      pdf.getData().then((data: Uint8Array) => {
-        this.updatePdfAnnotationFactory(new AnnotationFactory(data));
-      });
-    }).catch((error: any) => {
+  async getPDF() {
+    try {
+      const response = await fetch(process.env.VUE_APP_API_URL + '/pdf/getById/' + this.meeting_id);
+      const arrayBuffer = await response.arrayBuffer();
+      this.updatePdfAnnotationFactory(new AnnotationFactory(new Uint8Array(arrayBuffer)));
+    } catch (error) {
       console.log(error)
-    });
+    }
   }
 
   getTranscript() {
     // get meeting as text with meeting_id and transcriptLanguage
+    this.handlePdfLoading();
     axios.get(process.env.VUE_APP_API_URL + `/meetings/${this.meeting_id}/getMeetingAsText`, {
       params: {
         lang: this.transcriptLanguage,
         pageLang: this.$i18n.locale
       }
     }).then((response) => {
-      this.loading = false;
       this.updateOriginalTranscript({
         text: response.data.text,
         callback: !this.windowAllowsPdfDisplay() ? this.initialTranscriptSearchCallback : () => {
+          this.handlePdfLoaded();
         }
       });
     }).catch((error) => {
       console.log(error)
-    })
+    });
   }
 
   applyPageInput() {
@@ -669,9 +790,13 @@ export default class PdfView extends Vue {
     }
   }
 
+  getSelectedSpeaker(): string | undefined {
+    return this.transcriptHighlights.speaker;
+  }
+
   getWordsToHighlight(): string {
     // replace all non characters (except dot, quotes and slovenian characters) with space, then remove all double spaces
-    return this.wordsToHighlight.trim();
+    return this.wordsToHighlight.replace(/[^a-zA-Z0-9\s\.\u0106\u010c\u0160\u017d\u0107\u010d\u0161\u017e]/g, " ").replace(/\s+/g, " ").trim();
   }
 
   initStoreParams(): void {
@@ -687,18 +812,13 @@ export default class PdfView extends Vue {
   }
 
   // HIGHLIGHT FUNCTIONS
-  wordDisplayFn(word: string) {
-    return word;
+  speakerDisplayFn(speaker: string | undefined) {
+    return speaker;
   }
 
-  handleWordSelected = useDebounceFn((word: string) => {
-    this.wordsToHighlight = word;
-  }, 1000);
-
-
-  handleSearchChanged = useDebounceFn((search: string) => {
-    this.wordsToHighlight = search;
-  }, 1000);
+  handleSearchChanged(speaker: string) {
+    this.updateSpeaker(speaker);
+  }
 
   showNextPrevHighlightButtons() {
     if (this.show === 'pdf')
@@ -719,39 +839,39 @@ export default class PdfView extends Vue {
     }, 4000);
   }
 
-  parseSearchList() {
-    this.searchedWordsList = [];
-    if ((this.searchParams.words ?? "") !== "") {
-      // remove or and double spaces
-      let searchWords = this.searchParams.words.replace("OR", "").replace(/\s+/g, " ").trim();
+  async initSpeakerList() {
+    this.speakerList = [];
+    const response = await fetch(`${process.env.VUE_APP_API_URL}/meetings/${this.meeting_id}/getSpeakers`);
+    const data = await response.json();
+    this.speakerList = data.speakers;
 
-      // push all phrases inside "" as one string and remove them from words
-      let phrases = searchWords.match(/"[^"]*"/g) ?? [];
-      for (const phrase of phrases) {
-        this.searchedWordsList.push(phrase.replace(/"/g, ""));
-        searchWords = searchWords.replace(phrase, "");
-      }
-      // push all words left
-      this.searchedWordsList.push(...searchWords.split(" "));
+    // If speaker is selected, find the most similar speaker from the list set it as selected
+    if (this.searchParams.speaker) {
+      let selectedSpeakerLastName = this.searchParams.speaker.names[0].split(" ").pop();
+      let speakersLastNameList = this.speakerList
+          .map((speaker) => {
+            let lastWordIndex = speaker.split(" ").length - 1;
+            return speaker.split(" ")[lastWordIndex];
+          });
+
+      // Get index of the most similar speaker last name to the selected speaker last name
+      let closestSpeakerIndex = speakersLastNameList.indexOf(closest(selectedSpeakerLastName!, speakersLastNameList));
+      let closestSpeaker = this.speakerList[closestSpeakerIndex];
+      this.updateSpeaker(closestSpeaker);
     }
-    if (this.searchParams.place) {
-      for (const [key, value] of Object.entries(this.searchParams.place.names)) {
-        console.log(key, value);
-        if (value !== "" && value !== 'zzzzz')
-          this.searchedWordsList.push(value);
-      }
-    }
-    // TODO: add speakers
   }
 
   executeInitialSearch() {
-    this.firstLoad = false;
+    if (this.firstLoad) {
+      this.firstLoad = false;
 
-    let firstQuery = this.searchParams.words.replaceAll("AND", "OR").replaceAll(/\"|\'/g, "") ?? "";
-    // firstQuery += this.searchParams.place?.names ? " " + Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" ") : "";
-    // firstQuery += this.searchParams.speaker ? " " + this.searchParams.speaker?.names.join(" ") : "";
+      let firstQuery = this.searchParams.words.replaceAll("AND", "OR").replaceAll(/\"|\'/g, "") ?? "";
+      firstQuery += this.searchParams.place?.names ? " OR " + Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" OR ") : "";
 
-    this.wordsToHighlight = firstQuery.trim();
+      this.wordsToHighlight = firstQuery.trim();
+
+      this.searchForHighlights();
+    }
   }
 
   previousHighlightClick() {
@@ -788,7 +908,7 @@ export default class PdfView extends Vue {
   transparentBackground() {
     return this.scrollHeight / window.innerHeight > 0.2;
   }
-   */
+  */
 
   toggleTooltip() {
     this.showTooltip = !this.showTooltip;

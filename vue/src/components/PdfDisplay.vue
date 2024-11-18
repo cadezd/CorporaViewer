@@ -44,8 +44,8 @@ import {Pagination} from '@/types/Pagination';
       'updateNoMatchesCallback',
       'updatePdfViewer',
       'updatePdfJsLib',
-      'updatePdfAnnotationFactory',
       'updateOriginalPdfData',
+      //'updateScrollPdfToPercent'
     ]),
     ...mapMutations('documentPaginationModule', [
       'updatePageFunctions',
@@ -76,7 +76,7 @@ export default class PdfView extends Vue {
   @Ref('pdfContainer') pdfContainer!: HTMLDivElement;
 
   meeting_id?: string;
-  firstLoading = true;
+  firstLoading: boolean = true;
 
   eventBus?: pdfjsViewer.EventBus;
   pdfLinkService?: pdfjsViewer.PDFLinkService;
@@ -136,9 +136,8 @@ export default class PdfView extends Vue {
   /**
    * Initializes the PDF viewer.
    */
-  async initPdfViewer() {
+  initPdfViewer() {
     this.$emit('loading');
-
 
     this.eventBus = new pdfjsViewer.EventBus();
 
@@ -152,19 +151,16 @@ export default class PdfView extends Vue {
       linkService: this.pdfLinkService,
     });
 
-
     this.eventBus.on('pagesinit', () => {
-      this.resetPagination();
       this.pdfViewer!.currentScaleValue = 'page-width';
     });
 
-
     this.eventBus.on('textlayerrendered', (event: any) => {
-      if (!this.pdfHighlights.pdfAnnotationFactory && this.firstLoading) {
+      if (this.firstLoading) {
         this.firstLoading = false;
         this.$emit('executeInitialSearch');
       }
-    });
+    })
 
     this.eventBus.on('pagesloaded', (event: any) => {
       this.calculatePageDimensions();
@@ -176,22 +172,6 @@ export default class PdfView extends Vue {
         total: this.total
       });
 
-      if (this.pdfHighlights.highlights && this.pdfHighlights.highlights.length > 0) {
-        console.log("loading highlights...", this.pdfHighlights.highlights);
-        const currentIndex = Math.min(Math.max(this.transcriptHighlights.index, 0), this.pdfHighlights.highlights.length - 1);
-        this.pdfHighlights.updateIndexChanges(currentIndex);
-        this.pdfHighlights.scrollToHighlight();
-      }
-
-      this.$emit('loaded')
-    });
-
-    let src = this.pdfHighlights.pdfAnnotationFactory !== undefined ? {data: this.pdfHighlights.pdfAnnotationFactory!.write().slice(0)} : {url: this.pdfSource};
-    pdfjs.getDocument(src).promise.then(async (pdf) => {
-      this.pdfViewer!.setDocument(pdf);
-      this.pdfLinkService!.setViewer(this.pdfViewer);
-      this.pdfLinkService!.setDocument(pdf, null);
-
       this.pdfContainer.addEventListener('scroll', () => {
         this.calculateCurrentPage();
         this.documentPagination.pdfScrollPercent = (
@@ -200,8 +180,37 @@ export default class PdfView extends Vue {
         );
       });
 
+      this.pdfContainer.style.scrollBehavior = 'auto';
+      if (this.pdfHighlights.total === 0) {
+        this.pdfContainer.scrollTop = this.documentPagination.transcriptScrollPercent * (this.pdfContainer.scrollHeight - this.pdfContainer.clientHeight);
+      } else {
+        this.findHighlight();
+      }
+      this.pdfContainer.style.scrollBehavior = 'smooth';
+
+      this.$emit('loaded');
+    });
+
+
+    this.initHighlightsParams();
+
+    //let src = this.pdfHighlights.pdfAnnotationFactory !== undefined ? {data: this.pdfHighlights.pdfAnnotationFactory!.write().slice(0)} : {url: this.pdfSource};
+    /*
+    let src = {data: this.pdfHighlights.pdfAnnotationFactory!.write().slice(0)};
+    pdfjs.getDocument(src).promise.then(async (pdf) => {
+      this.pdfViewer!.setDocument(pdf);
+      this.pdfLinkService!.setViewer(this.pdfViewer);
+      this.pdfLinkService!.setDocument(pdf, null);
+
       this.initHighlightsParams();
     });
+    */
+  }
+
+  findHighlight() {
+    const currentIndex = Math.min(Math.max(this.transcriptHighlights.index, 0), this.pdfHighlights.highlights.length - 1);
+    this.pdfHighlights.updateIndexChanges(currentIndex);
+    this.pdfHighlights.scrollToHighlight();
   }
 
   /*
@@ -212,7 +221,6 @@ export default class PdfView extends Vue {
 
   calculatePageDimensions() {
     this.topScrollOffset = this.pdfContainer.scrollTop
-
     this.pageDimensions = {
       width: this.pdfContainer.clientWidth,
       height: this.pdfContainer.scrollHeight / this.total()
@@ -237,6 +245,12 @@ export default class PdfView extends Vue {
   total() {
     return this.pdfViewer!.pagesCount;
   }
+
+  /*
+  scrollPdfToPercent(percent: number){
+    this.pdfContainer.scrollTop = percent  * (this.pdfContainer.scrollHeight - this.pdfContainer.clientHeight);
+  }
+  */
 
   /*
   getPageOfElement(element: HTMLElement) {
@@ -676,20 +690,35 @@ export default class PdfView extends Vue {
 
    */
 
+  /*
+  scrollPdfToPercent(percent: number) {
+    // calculate the page number based on the percentage
+    const newPageNumber = Math.floor(percent * this.total()) + 1;
+    console.log('scrolling to page', newPageNumber);
+    this.currentPage = newPageNumber;
+    // scroll to the page into view
+    this.pdfViewer!.scrollPageIntoView({
+      pageNumber: newPageNumber,
+    });
+  }
+
+   */
+
 
   initHighlightsParams() {
-    this.updateEventBus(this.eventBus);
     this.updateSource(this);
+    this.updatePdfJsLib(pdfjs);
+    this.updateEventBus(this.eventBus);
+    this.updatePdfViewer(this.pdfViewer);
+    this.pdfHighlights.displayPdf(false);
+    //this.updateScrollPdfToPercent(this.scrollPdfToPercent);
     /*
     this.updateNextHighlight(this.nextHighlight);
     this.updatePreviousHighlight(this.previousHighlight);
     this.pdfHighlights.onNoMatchesFound();
     this.updateScrollToHighlight(this.scrollToHighlight);
     this.updatePrepHighlightBeforeScrolling(this.prepHighlightBeforeScrolling);
-    this.updateScrollPdfToPercent(this.scrollPdfToPercent);
      */
-    this.updatePdfJsLib(pdfjs);
-    this.updatePdfViewer(this.pdfViewer);
   }
 }
 </script>

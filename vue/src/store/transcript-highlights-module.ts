@@ -25,10 +25,22 @@ const mutations: MutationTree<TranscriptHighlightsState> = {
     updateLanguage(state: TranscriptHighlightsState, language: string | undefined) {
         state.instance.language = language;
     },
+    updateSpeaker(state: TranscriptHighlightsState, speaker: string | undefined) {
+        state.instance.speaker = speaker;
+    },
+    updateLooseSearch(state: TranscriptHighlightsState, looseSearch: boolean) {
+        state.instance.looseSearch = looseSearch;
+    },
     async updateOriginalTranscript(state: TranscriptHighlightsState, params: { text: string, callback: () => void }) {
         state.instance.originalTranscript = params.text;
         params.callback();
+        if (state.instance.container) {
+            state.instance.container.style.scrollBehavior = "auto";
+        }
         await state.instance.findMatches();
+        if (state.instance.container) {
+            state.instance.container!.style.scrollBehavior = "smooth";
+        }
     },
     updateContainer(state: TranscriptHighlightsState, container: HTMLDivElement) {
         state.instance.container = container;

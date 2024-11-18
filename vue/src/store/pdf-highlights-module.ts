@@ -27,6 +27,12 @@ const mutations: MutationTree<PdfHighlightsState> = {
     updateLanguage(state: PdfHighlightsState, language: string | undefined) {
         state.instance.language = language;
     },
+    updateSpeaker(state: PdfHighlightsState, speaker: string | undefined) {
+        state.instance.speaker = speaker;
+    },
+    updateLooseSearch(state: PdfHighlightsState, looseSearch: boolean) {
+        state.instance.looseSearch = looseSearch;
+    },
     updateMatchesCount(state: PdfHighlightsState, event: any) {
         state.instance.onMatchesFound(event);
     },
@@ -42,7 +48,7 @@ const mutations: MutationTree<PdfHighlightsState> = {
     updatePdfJsLib(state: PdfHighlightsState, pdfjsLib: any) {
         state.instance.pdfjsLib = pdfjsLib;
     },
-    updatePdfAnnotationFactory(state: PdfHighlightsState, pdfAnnotationFactory: AnnotationFactory) {
+    updatePdfAnnotationFactory(state: PdfHighlightsState, pdfAnnotationFactory: AnnotationFactory | undefined) {
         state.instance.pdfAnnotationFactory = pdfAnnotationFactory;
     },
     updateOriginalPdfData(state: PdfHighlightsState, originalPdfData: Uint8Array) {

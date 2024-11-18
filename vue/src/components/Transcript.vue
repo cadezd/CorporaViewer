@@ -63,7 +63,7 @@ import {Ref} from 'vue-property-decorator';
 import {mapGetters, mapMutations} from 'vuex';
 
 @Options({
-  emits: ['matchesChange'],
+  emits: ['matchesChange', 'loaded'],
   computed: {
     ...mapGetters('transcriptHighlightsModule', ['transcriptHighlightsInstance']),
     ...mapGetters('documentPaginationModule', ['documentPaginationInstance']),
@@ -71,7 +71,7 @@ import {mapGetters, mapMutations} from 'vuex';
   },
   methods: {
     ...mapMutations('transcriptHighlightsModule', ['updateContainer'])
-  }
+  },
 })
 
 export default class Transcript extends Vue {
@@ -93,8 +93,6 @@ export default class Transcript extends Vue {
   }
 
   mounted() {
-    this.initHighlightsParams();
-
     this.transcriptContainer.addEventListener('scroll', () => {
       this.pagination.transcriptScrollPercent = (
           this.transcriptContainer.scrollTop /
@@ -102,11 +100,15 @@ export default class Transcript extends Vue {
       );
     });
 
+    this.transcriptContainer.style.scrollBehavior = 'auto';
+    this.initHighlightsParams();
     if (this.transcriptHighlights.total === 0) {
       this.transcriptContainer.scrollTop = this.pagination.pdfScrollPercent * (this.transcriptContainer.scrollHeight - this.transcriptContainer.clientHeight);
     } else {
       this.findHighlight();
     }
+    this.transcriptContainer.style.scrollBehavior = 'smooth';
+
   }
 
   findHighlight() {

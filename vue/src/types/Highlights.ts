@@ -1,4 +1,5 @@
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
+import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer';
 import {reactive} from 'vue';
 import {Highlight} from "@/types/Highlight";
 import {AnnotationFactory} from 'annotpdf';
@@ -9,6 +10,8 @@ export abstract class HighlightsAbstract {
     // variables
     meetingId?: string;
     language?: string;
+    speaker?: string;
+    looseSearch: boolean = false;
     abstract search: () => string;
     index?: number;
     touched?: boolean;
@@ -47,7 +50,6 @@ export abstract class HighlightsAbstract {
                     try {
                         parsedChunk = JSON.parse(chunk);
                         // Yield the parsed chunk
-                        console.log(parsedChunk);
                         yield parsedChunk;
                     } catch (e) {
                         console.error("Error parsing chunk:", e);
@@ -131,6 +133,10 @@ export class TranscriptHighlights extends TranscriptHighlightsAbstract {
         let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
         if (this.language)
             URL += `&lang=${this.language}`;
+        if (this.speaker)
+            URL += `&speaker=${this.speaker}`;
+        if (this.looseSearch)
+            URL += `&looseSearch=true`;
 
         for await (const parsedChunk of super.streamingFetch(() => fetch(URL))) {
             const highlights: Highlight[] = parsedChunk.highlights;
@@ -139,10 +145,8 @@ export class TranscriptHighlights extends TranscriptHighlightsAbstract {
                 const firstId = highlight.ids[0];
                 const firstChild = transcriptContent.getElementById(firstId);
                 if (!firstChild) {
-                    console.error("Element not found");
                     continue;
                 }
-
                 const newParent = transcriptContent.createElement('span');
                 newParent.classList.add('transcript-highlight');
                 firstChild.parentNode?.insertBefore(newParent, firstChild);
@@ -181,7 +185,7 @@ export class TranscriptHighlights extends TranscriptHighlightsAbstract {
     scrollToHighlight = () => {
         if (this.highlights && this.highlights.length > 0) {
             const highlight = this.highlights[this.index];
-            highlight.scrollIntoView({behavior: 'smooth', block: 'center'});
+            highlight.scrollIntoView({block: 'center'});
         }
     }
 
@@ -232,14 +236,12 @@ export class TranscriptHighlights extends TranscriptHighlightsAbstract {
 export class PdfHighlight {
     id: string;
     rects: Rect[];
-    height: number;
     centerY: number;
 
     constructor(id: string, rects: Rect[]) {
         this.id = id;
         this.rects = rects;
-        this.height = rects[0].coordinates[rects[0].coordinates.length - 1].y1 - rects[0].coordinates[0].y0;
-        this.centerY = rects[0].coordinates[0].y0 - this.height / 2;
+        this.centerY = rects[0].coordinates[0].y0
     }
 }
 
@@ -276,6 +278,7 @@ export class PdfHighlights extends PdfHighlightsAbstract {
     index: number = -1;
     total: number = 0;
     eventBus?: PdfJsViewer.EventBus = undefined;
+    pdfLinkService?: pdfjsViewer.PDFLinkService = undefined;
     pdfViewer?: PdfJsViewer.PDFViewer = undefined;
     pdfAnnotationFactory?: AnnotationFactory = undefined;
     originalPdf?: Uint8Array = undefined;
@@ -288,35 +291,15 @@ export class PdfHighlights extends PdfHighlightsAbstract {
         this.total = total;
     }
 
-    saveView = () => {
-        const pageHeight = this.pdfViewer!.container.scrollHeight / this.pdfViewer!.pagesCount;
-        const currentPage = pageHeight == 0 ? 1 : Math.round(this.pdfViewer!.container.scrollTop / pageHeight) + 1;
-        const offsetY = this.pdfViewer!.container.scrollTop - (currentPage - 1) * pageHeight;
-        return {
-            pageNumber: currentPage,
-            offsetY: offsetY
-        };
-    }
-
-    restoreView(view: {
-        pageNumber: number | undefined;
-        offsetY: number | undefined;
-    }) {
-
-        if (view.pageNumber === undefined || view.offsetY === undefined)
-            return;
-
-        // Restore the page (disable smooth scrolling for a moment)
-        const pageHeight = this.pdfViewer!.container.scrollHeight / this.pdfViewer!.pagesCount;
-        this.pdfViewer!.container.scrollTop = (view.pageNumber! - 1) * pageHeight + view.offsetY!;
-
-    }
-
     findMatches = async () => {
         await this.clearMatches();
 
         if (this.search().length > 2) {
             let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
+            if (this.speaker)
+                URL += `&speaker=${this.speaker}`;
+            if (this.looseSearch)
+                URL += `&looseSearch=true`;
 
             for await (const parsedChunk of super.streamingFetch(() => fetch(URL))) {
                 const highlights: Highlight[] = parsedChunk.highlights;
@@ -361,26 +344,27 @@ export class PdfHighlights extends PdfHighlightsAbstract {
             });
         }
 
-        await this._displayPdf(true);
+        if (this.pdfAnnotationFactory) {
+            this.displayPdf(true);
+        }
     }
 
-    _displayPdf = async (shouldScrollToHighlight: boolean) => {
-        const savedView = this.saveView();
+    displayPdf = (shouldScrollToHighlight: boolean) => {
+        this.eventBus!.on("pagesinit", () => {
+            if (this.highlights && this.highlights.length > 0) {
+                // scroll to the first highlight
+                this.updateIndexChanges(0);
+                this.updateTotalChanges(this.highlights.length);
+                if (shouldScrollToHighlight) {
+                    this.scrollToHighlight();
+                }
+            }
+        });
+
         this.pdfjsLib.getDocument({
             data: this.pdfAnnotationFactory!.write().slice(0)
         }).promise.then((pdf: any) => {
-            this.pdfViewer?.setDocument(pdf);
-            this.pdfViewer?.eventBus.on("pagesloaded", () => {
-                if (this.highlights && this.highlights.length > 0) {
-                    // scroll to the first highlight
-                    this.updateIndexChanges(0);
-                    this.updateTotalChanges(this.highlights.length);
-                    if (shouldScrollToHighlight) this.scrollToHighlight();
-                } else {
-                    // restore the view
-                    this.restoreView(savedView);
-                }
-            });
+            this.pdfViewer!.setDocument(pdf);
             this.touched = true;
         });
     }
@@ -428,18 +412,15 @@ export class PdfHighlights extends PdfHighlightsAbstract {
     }
 
     scrollToHighlight: () => void = () => {
-        if (!this.highlights || this.highlights?.length === 0)
+        if (!this.highlights || this.highlights!.length === 0)
             return;
 
         console.log("scrollToHighlight", this.index, this.highlights.length);
 
         const currentHighlight = this.highlights[this.index];
-
-        console.log("scrollToHighlight", currentHighlight);
-
         const pageNumber = currentHighlight.rects[0].page;
         const containerHeight = this.pdfViewer!._pages![pageNumber].viewport.viewBox[3];
-        const centerOffsetY = currentHighlight.centerY + containerHeight / 7;
+        const centerOffsetY = currentHighlight.centerY + containerHeight / 6;
 
         this.pdfViewer!.scrollPageIntoView({
             pageNumber: pageNumber + 1,
