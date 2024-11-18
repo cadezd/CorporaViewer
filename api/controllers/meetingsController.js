@@ -314,7 +314,7 @@ const getHighlights = async (req, res) => {
 
     const meetingId = req.params.meetingId;
     const query = req.query.words;
-    const speaker = req.query.speaker;
+    const speaker = (req.query.speaker) ? utils.parseSpeaker(req.query.speaker).join('') : undefined;
     const lang = req.query.lang;
     const looseSearch = req.query.looseSearch === "true";
 
@@ -477,7 +477,32 @@ const getSpeakers = async (req, res) => {
             }
         });
 
-        const uniqueSpeakers = response.aggregations.unique_speakers.buckets.map(bucket => bucket.key);
+        const uniqueSpeakers = response.aggregations.unique_speakers.buckets
+            .map(bucket => bucket.key.trim())
+            // remove empty speakers
+            .filter(speaker => speaker)
+            // filter out speakers that don't have capitalized first and last word and contain any digit and dont contain "Poslanec" and "Abgeordneter" or contain only one of them
+            .filter((speaker) => {
+                let isFirstWordCapitalized = speaker[0] === speaker[0].toUpperCase();
+                let lastWord = speaker.split(" ").pop();
+                let isLastWordCapitalized = lastWord[0] === lastWord[0].toUpperCase();
+                let containsDigit = /\d/.test(speaker);
+
+                let containsPoslanec = speaker.includes("Poslanec");
+                let containsAbgeordneter = speaker.includes("Abgeordneter");
+
+                return isFirstWordCapitalized && isLastWordCapitalized && !containsDigit && ((!containsPoslanec && !containsAbgeordneter) || (!containsPoslanec && containsAbgeordneter) || (containsPoslanec && !containsAbgeordneter));
+            });
+
+        // Add "Landeshauptmann" to the first index list of speakers if it is not already there
+        if (!uniqueSpeakers.includes("Landeshauptmann")) {
+            uniqueSpeakers.unshift("Landeshauptmann");
+        }
+
+        // Add "Deželni glavar" to the first index list of speakers if it is not already there
+        if (!uniqueSpeakers.includes("Deželni glavar")) {
+            uniqueSpeakers.unshift("Deželni glavar");
+        }
 
         res.json({
             speakers: uniqueSpeakers
