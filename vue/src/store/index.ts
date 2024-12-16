@@ -33,9 +33,9 @@ export default createStore({
             if (!pdf) this.commit("transcriptHighlightsModule/nextHighlight");
             else this.commit("pdfHighlightsModule/nextHighlight");
         },
-        updateSearch(state: RootState, search: () => string) {
-            this.commit("transcriptHighlightsModule/updateSearch", search);
-            this.commit("pdfHighlightsModule/updateSearch", search);
+        updateQuery(state: RootState, query: string) {
+            this.commit("transcriptHighlightsModule/updateQuery", query);
+            this.commit("pdfHighlightsModule/updateQuery", query);
         },
         updateMeetingId(state: RootState, meetingId: string | undefined) {
             this.commit("transcriptHighlightsModule/updateMeetingId", meetingId);
@@ -45,6 +45,17 @@ export default createStore({
             this.commit("transcriptHighlightsModule/updateLanguage", language);
             this.commit("pdfHighlightsModule/updateLanguage", language);
         },
+        updateSpeaker(state: RootState, speaker: string | undefined) {
+            this.commit("transcriptHighlightsModule/updateSpeaker", speaker);
+            this.commit("pdfHighlightsModule/updateSpeaker", speaker);
+        },
+        updateLooseSearch(state: RootState, looseSearch: boolean) {
+            this.commit("transcriptHighlightsModule/updateLooseSearch", looseSearch);
+            this.commit("pdfHighlightsModule/updateLooseSearch", looseSearch);
+        },
+        reset(state: RootState) {
+            this.concat("transcriptHighlightsModule/clearMatches");
+        }
     },
     actions: {}
 })

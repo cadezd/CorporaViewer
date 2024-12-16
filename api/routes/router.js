@@ -14,6 +14,7 @@ router.get("/krajevnaImena/getAll", krajevnaImenaController.getAll);
 router.get("/meetings/:meetingId/getMeetingAsText", meetingsController.getMeetingAsText);
 router.get("/meetings/getPage/:page", meetingsController.getPage);
 router.get("/meetings/:meetingId/getHighlights", meetingsController.getHighlights);
+router.get("/meetings/:meetingId/getSpeakers", meetingsController.getSpeakers);
 
 router.get("/pdf/getById/:id", pdfController.getById);
 router.get("/pdf/getThumbnailById/:id", pdfController.getThumbnailById);

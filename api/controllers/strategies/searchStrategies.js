@@ -1,5 +1,6 @@
 require('dotenv').config();
 const utils = require("../utils/utils");
+const url = require("node:url");
 
 
 class BaseSearchStrategy {
@@ -26,6 +27,7 @@ class BaseSearchStrategy {
         // Build the query body for single words and phrases
         const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang, looseSearch);
         const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang, looseSearch);
+
 
         const promises = [
             esClient.search({
@@ -54,12 +56,6 @@ class BaseSearchStrategy {
                     query: phrasesQueryBody,
                 },
                 min_score: 1,
-                highlight: {
-                    number_of_fragments: 0,
-                    fields: {
-                        "translations.text": {}
-                    }
-                },
                 sort: [
                     {
                         "sentence_id.sort": {
@@ -83,8 +79,8 @@ class BaseSearchStrategy {
         // Get the unique identifier for deep pagination
         const singleWordsHits = singleWordsResponse ? singleWordsResponse.hits.hits : [];
         const phrasesHits = phrasesResponse ? phrasesResponse.hits.hits : [];
-        searchAfterWords = singleWordsHits.length > 0 ? singleWordsHits[singleWordsHits.length - 1].sort[0] : undefined;
-        searchAfterPhrases = phrasesHits.length > 0 ? phrasesHits[phrasesHits.length - 1].sort[0] : undefined;
+        searchAfterWords = singleWordsHits.length > 0 ? singleWordsHits[singleWordsHits.length - 1].sort[0] : searchAfterWords;
+        searchAfterPhrases = phrasesHits.length > 0 ? phrasesHits[phrasesHits.length - 1].sort[0] : searchAfterPhrases;
 
         return {singleWordsResponse, phrasesResponse, searchAfterWords, searchAfterPhrases};
     }
@@ -140,7 +136,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 ids: [hit._source.word_id],
                 texts: [hit._source.text],
                 lemmas: [hit._source.lemma],
-                coordinates: hit._source.coordinates,
+                rects: utils.groupCoordinates(hit._source.coordinates),
             }));
 
         // Fetch the data for sentences that contain the translated words
@@ -155,7 +151,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
         const translatedSentences = translatedSentencesResponse.hits.hits.map(hit => ({
             ids: [hit._source.sentence_id],
             texts: [hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text)],
-            coordinates: hit._source.coordinates,
+            rects: utils.groupCoordinates(hit._source.coordinates),
         }));
 
         return [...originalWords, ...translatedSentences];
@@ -173,7 +169,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             .map(hit => ({
                 ids: [hit._source.sentence_id],
                 //texts: [hit.inner_hits.matched_translation.hits.hits.map(hit => hit._source.text)],
-                coordinates: hit._source.coordinates,
+                rects: utils.groupCoordinates(hit._source.coordinates)
             }));
 
         // For original phrases, we collect the data of the sentences id and highlights (text that shows the matched words - wrapped in <em> tags)
@@ -181,7 +177,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             .filter(hit => hit.inner_hits.matched_translation.hits.hits[0]._source.original === 1)
             .map(hit => ({
                 id: hit._source.sentence_id,
-                highlight: hit.highlight["translations.text"][0]
+                highlight: hit.inner_hits.matched_translation.hits.hits[0].highlight["translations.text"][0]
             }));
 
         // For each original sentence that contains searched phrase, we create a query to get the words that are highlighted in the sentence
@@ -229,17 +225,36 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
         const originalWords = responses
             .filter(response => response.status === "fulfilled")
             .map(response => response.value.hits.hits
-                .reduce((acc, hit) => {
-                        acc.ids.push(hit._source.word_id);
-                        acc.texts.push(hit._source.text);
-                        acc.lemmas.push(hit._source.lemma);
-                        acc.coordinates.push(...hit._source.coordinates);
-                        return acc;
-                    }, {ids: [], texts: [], lemmas: [], coordinates: []}
-                )
+                .reduce((acc, hit, index, hits) => {
+                    // If it's the first word or the difference in `wpos` between the current and previous word is greater than one
+                    if (index === 0 || (hit._source.wpos - hits[index - 1]._source.wpos) > 1) {
+
+                        // Group the coordinates of the previous group
+                        if (index > 0) {
+                            acc[acc.length - 1].rects = utils.groupCoordinates(acc[acc.length - 1].rects);
+                        }
+
+                        // Start a new group
+                        acc.push({ids: [], /*texts: [], lemmas: [],*/ rects: []});
+                    }
+                    // Add word details to the current group
+                    const currentGroup = acc[acc.length - 1];
+                    currentGroup.ids.push(hit._source.word_id);
+                    /*currentGroup.texts.push(hit._source.text);
+                    currentGroup.lemmas.push(hit._source.lemma);*/
+                    currentGroup.rects.push(...hit._source.coordinates);
+
+                    // Group the coordinates of the last group
+                    if (index === hits.length - 1) {
+                        currentGroup.rects = utils.groupCoordinates(currentGroup.rects);
+                    }
+
+                    return acc;
+                }, []) // Initialize acc as an empty array to hold word groups
             );
 
-        return [...translatedSentences, ...originalWords];
+
+        return [...translatedSentences, ...(originalWords.flat())];
     }
 
 }
@@ -258,7 +273,7 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
                 ids: [hit._source.word_id],
                 texts: [hit._source.text],
                 lemmas: [hit._source.lemma],
-                coordinates: [],
+                rects: [],
             }));
     }
 
@@ -273,7 +288,7 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
         const sentencesIdsHighlightsLang = phrasesResponse.hits.hits
             .map(hit => ({
                 id: hit._source.sentence_id,
-                highlight: hit.highlight["translations.text"][0],
+                highlight: hit.inner_hits.matched_translation.hits.hits[0].highlight["translations.text"][0],
                 language: hit.inner_hits.matched_translation.hits.hits[0]._source.lang
             }));
 
@@ -320,18 +335,29 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
 
         // Fetch the data for the words that are highlighted in the original sentences
         const responses = await Promise.allSettled(promises);
-
-        return responses
+        const groups = responses
             .filter(response => response.status === "fulfilled")
             .map(response => response.value.hits.hits
-                .reduce((acc, hit) => {
-                        acc.ids.push(hit._source.word_id);
-                        acc.texts.push(hit._source.text);
-                        acc.lemmas.push(hit._source.lemma);
-                        return acc;
-                    }, {ids: [], texts: [], lemmas: [], coordinates: []}
-                )
+                .reduce((acc, hit, index, hits) => {
+                    // If it's the first word or the difference in `wpos` between the current and previous word is greater than one
+                    if (index === 0 || (hit._source.wpos - hits[index - 1]._source.wpos) > 1) {
+                        // Start a new group
+                        acc.push({ids: [], texts: [], lemmas: [], rects: []});
+                    }
+                    // Add word details to the current group
+                    const currentGroup = acc[acc.length - 1];
+                    currentGroup.ids.push(hit._source.word_id);
+                    currentGroup.texts.push(hit._source.text);
+                    currentGroup.lemmas.push(hit._source.lemma);
+
+
+                    currentGroup.rects.push(...hit._source.coordinates);
+
+                    return acc;
+                }, []) // Initialize acc as an empty array to hold word groups
             );
+
+        return groups.flat();
     }
 }
 

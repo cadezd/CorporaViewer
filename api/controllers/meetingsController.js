@@ -309,24 +309,113 @@ const getMeetingAsText = async (req, res) => {
 
 
 const getHighlights = async (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
     const meetingId = req.params.meetingId;
     const query = req.query.words;
-    const speaker = req.query.speaker;
+    const speaker = (req.query.speaker) ? utils.parseSpeaker(req.query.speaker).join('') : undefined;
     const lang = req.query.lang;
     const looseSearch = req.query.looseSearch === "true";
 
-    if (!query) {
-        res.status(400).json({error: "Bad request, missing query"});
+    if (!query && !speaker) {
+        res.status(400).json({error: "Bad request, missing query or speaker"});
+        return;
+    }
+
+    // Special case if there is only a speaker we are searching for and no query
+    if (!query && speaker) {
+        const chunkSize = 5;
+        let afterKey = undefined;
+        const speakerQuery = utils.speakerSearchQueryBuilder(meetingId, speaker);
+
+        while (true) {
+            const response = await esClient.search({
+                index: process.env.SENTENCES_INDEX_NAME || 'sentences-index',
+                size: 0,
+                query: speakerQuery,
+                aggregations: {
+                    group_by_segment_id: {
+                        composite: {
+                            sources: [
+                                {
+                                    segment_sort: {
+                                        terms: {field: 'segment_id.sort', order: 'asc'}
+                                    }
+                                },
+                                {
+                                    segment_id: {
+                                        terms: {field: 'segment_id'}
+                                    }
+                                }
+                            ],
+                            size: chunkSize, // Number of buckets per page
+                            ...(afterKey ? {after: afterKey} : {})
+                        },
+                        aggregations: {
+                            sentences: {
+                                top_hits: {
+                                    sort: [
+                                        {
+                                            'sentence_id.sort': {order: 'asc'}
+                                        }
+                                    ],
+                                    _source: {
+                                        includes: ['sentence_id', 'coordinates', 'speaker', 'segment_id']
+                                    },
+                                    size: 50000
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (!response || (response && !response.aggregations.group_by_segment_id.buckets.length)) {
+                break;
+            }
+
+            const buckets = response.aggregations.group_by_segment_id.buckets;
+            const highlights = [];
+
+            for (const bucket of buckets) {
+                const ids = bucket.sentences.hits.hits.map(hit => hit._source.sentence_id);
+                const coordinates = bucket.sentences.hits.hits.map(hit => hit._source.coordinates).flat();
+                highlights.push({
+                    ids: ids,
+                    rects: utils.groupCoordinates(coordinates)
+                });
+            }
+
+            // Send the partial response to the client
+            res.write(JSON.stringify({
+                speaker: speaker,
+                highlights: highlights
+            }) + "\n");
+
+            if (!response.aggregations.group_by_segment_id.after_key || response.aggregations.group_by_segment_id.buckets.length < chunkSize) {
+                break;
+            }
+
+            afterKey = response.aggregations.group_by_segment_id.after_key
+        }
+
+        res.end();
         return;
     }
 
     // Tokenize the query and separate it into words and phrases
-    const tokens = utils.tokenizeQuery(query)
+    let words = undefined;
+    let phrases = undefined;
+    const tokens = utils.tokenizeQueryDocumentSearch(query)
         .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
         .map(tokens => tokens.map(token => token.replaceAll(/[^a-zA-Z0-9]/g, '')))
         .map(tokens => tokens.filter(token => token.length > 0));
-    const words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
-    const phrases = tokens.filter(token => token.length > 1);
+    words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
+    phrases = tokens.filter(token => token.length > 1);
+
+    console.log(tokens);
+
 
     // Point in time id for words and sentences index
     let wordsIndexPITId = undefined;
@@ -359,6 +448,7 @@ const getHighlights = async (req, res) => {
         wordsIndexPITId = responses[0].id;
         sentenceIndexPITId = responses[1].id;
 
+
         while (true) {
             // Execute search using the chosen strategy and process the response
             const {
@@ -368,8 +458,7 @@ const getHighlights = async (req, res) => {
                 searchAfterPhrases: newSearchAfterPhrases
             } = await searchStrategy.search(esClient, meetingId, words, phrases, speaker, lang, looseSearch, chunkSize, wordsIndexPITId, sentenceIndexPITId, searchAfterWords, searchAfterPhrases);
 
-
-            // If there are no more results, break the loop
+            // If there are no results, send empty response and break the loop
             if ((!singleWordsResponse || (singleWordsResponse && !singleWordsResponse.hits.hits.length)) &&
                 (!phrasesResponse || (phrasesResponse && !phrasesResponse.hits.hits.length))) {
                 break;
@@ -378,15 +467,30 @@ const getHighlights = async (req, res) => {
             const singleWordsHighlights = await searchStrategy.processSingleWordsResponse(singleWordsResponse, esClient, meetingId);
             const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, esClient, meetingId);
 
-            // Send the partial response to the client
-            const partialResponse = {
-                words: words,
-                phrases: phrases,
-                highlights: [...singleWordsHighlights, ...phrasesHighlights]
-            }
+
+            // Filter out words if they are part of a sentence that is already highlighted
+            const highlights = [...singleWordsHighlights, ...phrasesHighlights];
+            const sentenceIds = new Set(highlights
+                .flatMap(highlight => highlight.ids)
+                .filter(id => id.includes(".s") && !id.includes(".w"))
+            );
+            const filteredHighlights = highlights.filter(highlight => {
+                // Just a safety check
+                if (highlight.ids.length === 0)
+                    return false;
+                // Sentence highlights always have exactly one id
+                if (highlight.ids.length === 1 && highlight.ids[0].includes(".s") && !highlight.ids[0].includes(".w"))
+                    return true;
+                return !highlight.ids.some(id => sentenceIds.has(id.split(".w")[0]));
+            });
 
             // Send the partial response to the client
-            res.write(JSON.stringify(partialResponse));
+            res.write(JSON.stringify({
+                words: words,
+                phrases: phrases,
+                speaker: speaker,
+                highlights: filteredHighlights
+            }) + "\n");
 
             // If there are fewer results than the chunk size, break the loop
             if ((singleWordsResponse && singleWordsResponse.hits.hits.length < chunkSize) && (phrasesResponse && phrasesResponse.hits.hits.length < chunkSize)) {
@@ -425,8 +529,74 @@ const getHighlights = async (req, res) => {
 }
 
 
+const getSpeakers = async (req, res) => {
+    const meetingId = req.params.meetingId;
+
+    if (!meetingId) {
+        res.status(400).json({error: "Bad request, missing meetingId"});
+        return;
+    }
+
+    try {
+        const response = await esClient.search({
+            index: process.env.MEETINGS_INDEX_NAME || 'meetings-index',
+            body: {
+                query: {
+                    bool: {
+                        filter: [
+                            {
+                                term: {
+                                    id: meetingId
+                                }
+                            }
+                        ]
+                    }
+                },
+                aggs: {
+                    unique_speakers: {
+                        terms: {
+                            field: "sentences.speaker.keyword",
+                            size: 10000
+                        }
+                    }
+                },
+                _source: false
+            }
+        });
+
+        let uniqueSpeakers = response.aggregations.unique_speakers.buckets
+            .map(bucket => bucket.key.trim())
+            // remove empty speakers
+            .filter(speaker => speaker)
+
+            // filter out speakers that don't have capitalized first and last word and contain any digit and dont contain "Poslanec" and "Abgeordneter" or contain only one of them
+            .filter((speaker) => {
+                let isFirstWordCapitalized = speaker[0] === speaker[0].toUpperCase();
+                let lastWord = speaker.split(" ").pop();
+                let isLastWordCapitalized = lastWord[0] === lastWord[0].toUpperCase();
+                let containsDigit = /\d/.test(speaker);
+
+                let containsPoslanec = speaker.includes("Poslanec");
+                let containsAbgeordneter = speaker.includes("Abgeordneter");
+
+                return isFirstWordCapitalized && isLastWordCapitalized && !containsDigit && ((!containsPoslanec && !containsAbgeordneter) || (!containsPoslanec && containsAbgeordneter) || (containsPoslanec && !containsAbgeordneter));
+            });
+
+        // remove duplicates
+        uniqueSpeakers = [...new Set(uniqueSpeakers)];
+
+        res.json({
+            speakers: uniqueSpeakers
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({error: "Internal server error"});
+    }
+}
+
 module.exports = {
     getMeetingAsText,
     getHighlights,
+    getSpeakers,
     getPage
 };

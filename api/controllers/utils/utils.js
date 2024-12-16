@@ -39,7 +39,7 @@ const cleanQuery = (obj) => {
 /**
  * Tokenizes the words
  * @param {string} query
- * @returns {string[][]} - The tokenized words
+ * @returns {string[][]} - The tokenized words.
  */
 const tokenizeQuery = (query) => {
     const orQueries = query.split("OR");
@@ -50,6 +50,33 @@ const tokenizeQuery = (query) => {
         const wordsWithoutQuotes = orQuery.replace(/"([^"]+)"/g, '').split(" ").filter(word => word !== "");
         return [...(wordsInQuotes || []), ...(wordsWithoutQuotes || [])];
     });
+}
+
+/**
+ * Tokenizes the query for searching words in the specified document.
+ * @param {string} query - The query to tokenize.
+ * @returns {string[][]} - The tokenized words.
+ */
+const tokenizeQueryDocumentSearch = (query) => {
+    // Match quoted strings and non-quoted parts
+    const regex = /"([^"]+)"|'([^']+)'|(\S+)/g;
+    let groupedTokens = [];
+    let match;
+
+    while ((match = regex.exec(query)) !== null) {
+        if (match[1]) {
+            // Double-quoted text, split into tokens
+            groupedTokens.push(match[1].split(/\s+/));
+        } else if (match[2]) {
+            // Single-quoted text, split into tokens
+            groupedTokens.push(match[2].split(/\s+/));
+        } else if (match[3]) {
+            // Non-quoted part
+            groupedTokens.push([match[3]]);
+        }
+    }
+
+    return groupedTokens;
 }
 
 const parseSpeaker = (speaker_list) => {
@@ -111,19 +138,13 @@ const formatDate = (date, format) => {
 // joins words so that punctuation is not separated from the word
 const joinWords = (words) => {
     let joined = [];
-    let charactersLeft = '([{»„‘\'\"“';
-    let charactersRight = '.,:;?!)]}«“’\'\"”';
-    let word = '';
     for (let i = 0; i < words.length; i++) {
-        word = words[i].text;
-        if (i + 1 < words.length && (charactersLeft.includes(word.trim()) || charactersRight.includes(words[i + 1].text.trim()))) {
-            joined.push(buildHtmlElement(`<span id='${words[i].id}'>`, word.trim(), "", "</span>"));
-            joined.push(buildHtmlElement(`<span id='${words[i + 1].id}'>`, words[i + 1].text.trim(), "", "</span>"));
-            i++;
-        } else {
-            joined.push(buildHtmlElement(`<span id='${words[i].id}'>`, word.trim(), "", "</span>"));
+        let word = words[i];
+        joined.push(buildHtmlElement(`<span id='${word.id}'>`, word.text, "", "</span>"));
+        // Attribute join is used to determine if the word should be joined with the next word
+        if (word.join === "natural") {
+            joined.push(' ');
         }
-        joined.push(' ');
     }
     return joined.join('');
 }
@@ -335,6 +356,36 @@ const buildQueryBody = (words, placeNames, speaker, filters) => {
     return bodyQuery
 }
 
+/**
+ * Returns the query body for searching segments where provided speaker spoke in the meetling with given id.
+ *
+ * @param {string} meetingId
+ * @param {string} speaker
+ */
+const speakerSearchQueryBuilder = (meetingId, speaker) => {
+    return {
+        bool: {
+            filter: [
+                {
+                    term: {
+                        meeting_id: meetingId
+                    }
+                }
+            ],
+            must: [
+                {
+                    match: {
+                        speaker: {
+                            query: speaker,
+                            fuzziness: "2",
+                        }
+                    }
+                }
+            ]
+        }
+    };
+}
+
 
 /**
  * Returns the query body for searching words in meeting with given id and other filters or an empty object if the meeting id or words are not provided.
@@ -372,12 +423,25 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
                         "meeting_id": meetingId
                     }
                 },
-                // Add filters for speaker and language if provided
-                ...(speaker ? [{term: {"speaker": speaker}}] : []),
                 ...(lang ? [{term: {"lang": lang}}] : [])
             ],
-            should: wordsFilter,
-            minimum_should_match: 1
+            must: [
+                ...(speaker ? [{
+                    match: {
+                        "speaker": {
+                            query: speaker,
+                            fuzziness: "2",
+                            operator: "and"
+                        }
+                    }
+                }] : []),
+                {
+                    bool: {
+                        should: wordsFilter,
+                        minimum_should_match: 1
+                    }
+                }
+            ]
         }
     };
 }
@@ -391,7 +455,6 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
  * @returns {{bool: {filter: [{term: {meeting_id}},{terms: {sentence_id}}]}}}
  */
 const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
-    // TODO: figure something out for the case when meetingId is not provided
     if (!meetingId)
         throw new Error("Meeting id is required for building the query body");
 
@@ -458,45 +521,58 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
         }
     });
 
-    // Build the query body
-    let queryBody = {
+    // Remove null and undefined values from the query body
+    return {
         bool: {
             filter: [
                 {
                     term: {
                         "meeting_id": meetingId
                     }
-                },
-                // Add filters for speaker if provided
-                ...(speaker ? [{term: {"speaker": speaker}}] : []),
+                }
             ],
-            should: [
+            must: [
+                ...(speaker ? [{
+                    match: {
+                        "speaker": {
+                            query: speaker,
+                            fuzziness: "2",
+                        }
+                    }
+                }] : []),
                 {
                     nested: {
                         path: "translations",
                         query: {
                             bool: {
-                                filter: [
-                                    // Add filter for language if provided else search in the original language
-                                    ...(lang ? [{term: {"translations.lang": lang}}] : [{term: {"translations.original": 1}}]),
-                                ],
                                 should: phrasesFilters,
                                 minimum_should_match: 1
                             }
                         },
-                        // This tells us if the phrase was found in the original language or in translation
+                        // This tells us in which translation the phrase was found (could be in multiple translations)
                         inner_hits: {
                             name: "matched_translation",
-                            size: 1,
+                            // Highlight the matched words in the sentence
+                            highlight: {
+                                number_of_fragments: 0,
+                                fields: {
+                                    "translations.text": {}
+                                }
+                            },
+                            // Sort the inner hits by the original translation (in case there are matches in multiple translations, we want to show the original one first)
+                            sort: [
+                                {
+                                    "translations.original": {
+                                        order: "desc"
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
             ]
         }
     };
-
-    // Remove null and undefined values from the query body
-    return cleanQuery(queryBody);
 }
 
 /**
@@ -534,9 +610,38 @@ const getEmTagIndexes = (text) => {
 }
 
 
+const groupCoordinates = (coordinates) => {
+    return coordinates.reduce((acc, coord) => {
+        // Find or create an entry for the current page
+        let pageGroup = acc.find(item => item.page === coord.page);
+
+        if (!pageGroup) {
+            pageGroup = {page: coord.page, coordinates: []};
+            acc.push(pageGroup);
+        }
+
+        // Find if there's an existing coordinate with the same y0 value
+        const existing = pageGroup.coordinates.find(
+            c => c.y0 === coord.y0
+        );
+
+        if (existing) {
+            // Update x0 to be the minimum, and x1 to be the maximum
+            existing.x0 = Math.min(existing.x0, coord.x0);
+            existing.x1 = Math.max(existing.x1, coord.x1);
+        } else {
+            // If no match is found for y0, add the new coordinate to the coordinates array
+            pageGroup.coordinates.push({x0: coord.x0, y0: coord.y0, x1: coord.x1, y1: coord.y1});
+        }
+
+        return acc;
+    }, []);
+}
+
 module.exports = {
     shouldMatchLemmaAndText,
     tokenizeQuery,
+    tokenizeQueryDocumentSearch,
     parseSpeaker,
     parsePlace,
     parseSort,
@@ -549,8 +654,10 @@ module.exports = {
     getAgendaTitle,
     buildHtmlElement,
     buildQueryBody,
+    speakerSearchQueryBuilder,
     wordsSearchQueryBuilder,
     sentencesCoordinatesQueryBuilder,
     phrasesSearchQueryBuilder,
-    getEmTagIndexes
+    getEmTagIndexes,
+    groupCoordinates
 }

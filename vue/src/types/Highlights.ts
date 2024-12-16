@@ -1,59 +1,102 @@
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
+import * as pdfjsViewer from 'pdfjs-dist/web/pdf_viewer';
 import {reactive} from 'vue';
-import axios from "axios";
-import {Word} from "@/types/Word";
+import {Highlight} from "@/types/Highlight";
+import {AnnotationFactory} from 'annotpdf';
+import {Rect} from "@/types/Rect";
 
-export interface Highlights {
+export abstract class HighlightsAbstract {
 
     // variables
     meetingId?: string;
+    query: string = "";
     language?: string;
-    search: () => string;
-    index: number;
-    touched: boolean;
-    total: number;
+    speaker?: string;
+    looseSearch: boolean = false;
+    index?: number;
+    touched?: boolean;
+    total?: number;
+
+    /**
+     * Generator function to stream responses from fetch calls.
+     *
+     * @param {Function} fetchcall - The fetch call to make. Should return a response with a readable body stream.
+     * @returns {AsyncGenerator<string>} An async generator that yields strings from the response stream.
+     */
+    async* streamingFetch(fetchcall: Function): AsyncIterableIterator<any> {
+
+        const response = await fetchcall();
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = '';
+
+        while (true) {
+            // wait for next encoded chunk
+            const {done, value} = await reader.read();
+            // check if stream is done
+            if (done) break;
+
+            // Decode the chunk and add it to the buffer
+            buffer += decoder.decode(value, {stream: true});
+
+            // Process the complete JSON object from the buffer
+            let boundary = buffer.indexOf('\n');
+            while (boundary !== -1) {
+                const chunk = buffer.slice(0, boundary);
+                buffer = buffer.slice(boundary + 1);
+                if (chunk.trim()) {
+                    let parsedChunk = undefined;
+                    try {
+                        parsedChunk = JSON.parse(chunk);
+                        // Yield the parsed chunk
+                        yield parsedChunk;
+                    } catch (e) {
+                        console.error("Error parsing chunk:", e);
+                        continue;
+                    }
+                }
+                boundary = buffer.indexOf('\n');
+            }
+        }
+    }
 
     // functions
-    findMatches: () => void;
-    clearMatches: () => void;
-    scrollToHighlight: (...params: any) => void;
-    nextHighlight: () => void;
-    previousHighlight: () => void;
+    abstract findMatches: () => void;
+    abstract clearMatches: () => void;
+    abstract scrollToHighlight: (...params: any) => void;
+    abstract nextHighlight: () => void;
+    abstract previousHighlight: () => void;
 }
 
 // -----------------------------
 // Transcript highlights
 // -----------------------------
 
-export interface TranscriptHighlights extends Highlights {
+export abstract class TranscriptHighlightsAbstract extends HighlightsAbstract {
     // variables
     highlights?: NodeListOf<Element>;
     container?: HTMLDivElement;
-    transcript: string;
-    originalTranscript: string;
+    transcript?: string;
+    originalTranscript?: string;
 
     // functions
-    applyTranscript: () => void;
+    abstract applyTranscript: () => void;
 
     // callbacks
-    updateTranscriptIndex: (index: number) => void;
-    updateTranscriptTotal: (total: number) => void;
+    abstract updateTranscriptIndex: (index: number) => void;
+    abstract updateTranscriptTotal: (total: number) => void;
 }
 
-export class TranscriptHighlights implements TranscriptHighlights {
+export class TranscriptHighlights extends TranscriptHighlightsAbstract {
 
     static create(): TranscriptHighlights {
         return reactive(new TranscriptHighlights()) as TranscriptHighlights;
     }
 
-    meetingId?: string;
-    language?: string;
-    search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
     total: number = 0;
-    highlights?: NodeListOf<Element>;
-    container?: HTMLDivElement;
     transcript: string = "";
     originalTranscript: string = "";
 
@@ -79,112 +122,54 @@ export class TranscriptHighlights implements TranscriptHighlights {
 
     // this function is called whenever search string changes or original transcript changes, so transcript is never just an empty string
     findMatches = async () => {
-        this.clearMatches();
-        if (this.search().length > 2) {
-            const searchTerms = this.search().split(' ');
-            let highlightedTranscript = this.transcript;
+        await this.clearMatches();
 
-            /*
-            // simulate the api response that return following data ['DZK_1903-10-06_44_03_seg56.s11.w41', 'DZK_1903-10-06_44_03_seg56.s10.w26', 'DZK_1903-10-06_44_03_seg58.s36.w21', 'DZK_1903-10-06_44_03_seg59.s11.w18']
-            let promise: Promise<string[]> = new Promise((resolve, reject) => {
-                setTimeout(() => resolve(['DZK_1903-10-06_44_03_seg56.s11.w41', 'DZK_1903-10-06_44_03_seg56.s10.w26', 'DZK_1903-10-06_44_03_seg58.s36.w21', 'DZK_1903-10-06_44_03_seg59.s11.w18']), 2000);
-            });
+        if (this.query!.length <= 2 && !this.speaker)
+            return;
 
-            await promise.then((data: string[]) => {
-                data.forEach((id: string) => {
-                    let element = document.getElementById(id);
-                    if (element)
-                        element.classList.add('transcript-highlight');
-                });
-            });
+        let transcriptContent = new DOMParser().parseFromString(this.transcript, 'text/html');
 
-             */
+        let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.query}`;
+        if (this.language)
+            URL += `&lang=${this.language}`;
+        if (this.speaker)
+            URL += `&speaker=${this.speaker}`;
+        if (this.looseSearch)
+            URL += `&looseSearch=true`;
 
-            let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getWordsToHighlight?words=${this.search()}`;
-            if (this.language) URL += `&language=${this.language}`;
+        for await (const parsedChunk of super.streamingFetch(() => fetch(URL))) {
+            const highlights: Highlight[] = parsedChunk.highlights;
+            for (const highlight of highlights) {
 
-            let response = await axios.get(URL);
-
-            let wordsToHighlight = response.data;
-
-            wordsToHighlight.forEach((wordsAndPhrases: Word[]) => {
-
-                if (wordsAndPhrases.length === 1) {
-                    let word = wordsAndPhrases[0];
-                    let tmp = document.createElement('template');
-                    tmp.innerHTML = highlightedTranscript;
-
-                    let element = tmp.content.getElementById(word.id);
-                    if (element)
-                        element.classList.add('transcript-highlight');
-
-                    highlightedTranscript = tmp.innerHTML;
-                } else {
-                    // wrap the phrase in a span with class transcript-highlight
-                    let span = document.createElement('span');
-                    span.classList.add('transcript-highlight');
-
-                    span.innerHTML = wordsAndPhrases.map((word: Word) => {
-                        return document.getElementById(word.id)?.outerHTML || "";
-                    }).join(' ').trim();
-
-
-                    let tmp = document.createElement('template');
-                    tmp.innerHTML = highlightedTranscript;
-
-                    // delete the original words from the transcript except the first one
-                    wordsAndPhrases.forEach((word: Word, i: number) => {
-                        if (i !== 0) {
-                            let element = tmp.content.getElementById(word.id);
-                            if (element) {
-                                element.remove();
-                            }
-                        }
-                    });
-
-                    let element = tmp.content.getElementById(wordsAndPhrases[0].id);
-                    if (element) {
-                        element.replaceWith(span);
-                    }
-
-                    // remove other words from the transcript
-                    highlightedTranscript = tmp.innerHTML;
+                const firstId = highlight.ids[0];
+                const firstChild = transcriptContent.getElementById(firstId);
+                if (!firstChild) {
+                    continue;
                 }
-            });
+                const newParent = transcriptContent.createElement('span');
+                newParent.classList.add('transcript-highlight');
+                firstChild.parentNode?.insertBefore(newParent, firstChild);
 
-            /*
-            ids.forEach((id: string) => {
-                let tmp = document.createElement('template');
-                tmp.innerHTML = highlightedTranscript;
-
-                let element = tmp.content.getElementById(id);
-                if (element)
-                    element.classList.add('transcript-highlight');
-
-                highlightedTranscript = tmp.innerHTML;
-            });
-
-             */
-
-
-            /*
-            searchTerms.forEach((searchTerm: string) => {
-                const regex = new RegExp(`(?!<[^>]*>)${searchTerm}(?![^<]*>)`, 'gi');
-                highlightedTranscript = highlightedTranscript.replace(regex, (match) => `<span class="transcript-highlight">${match}</span>`);
-            });
-            */
-
-
-            this.transcript = highlightedTranscript;
-            if (this.container) {
-                this.container.innerHTML = highlightedTranscript;
-                this._saveHighlights(true);
+                highlight.ids.forEach((id: string) => {
+                    const element = transcriptContent.getElementById(id);
+                    if (element) {
+                        const prevTextNode = element.previousSibling;
+                        if (prevTextNode && prevTextNode.nodeType === Node.TEXT_NODE) {
+                            newParent.appendChild(prevTextNode);
+                        }
+                        newParent.appendChild(element);
+                    }
+                });
             }
-        } else {
-            this.transcript = this.originalTranscript;
-            if (this.container) this.container.innerHTML = this.transcript;
+        }
+
+        this.transcript = transcriptContent.body.innerHTML;
+        if (this.container) {
+            this.container.innerHTML = this.transcript;
+            this._saveHighlights(true);
         }
     }
+
 
     private _saveHighlights = (shouldScrollToHighlight: boolean) => {
         this.highlights = this.container?.querySelectorAll(`.transcript-highlight`);
@@ -199,11 +184,11 @@ export class TranscriptHighlights implements TranscriptHighlights {
     scrollToHighlight = () => {
         if (this.highlights && this.highlights.length > 0) {
             const highlight = this.highlights[this.index];
-            highlight.scrollIntoView({behavior: 'smooth', block: 'center'});
+            highlight.scrollIntoView({block: 'center'});
         }
     }
 
-    clearMatches() {
+    clearMatches = async () => {
         this.transcript = this.originalTranscript;
         if (this.container) this.container.innerHTML = this.transcript;
         this.highlights = undefined;
@@ -236,7 +221,9 @@ export class TranscriptHighlights implements TranscriptHighlights {
         if (this.container) {
             this.container.innerHTML = this.transcript;
             this._saveHighlights(false);
-        } else console.error("container not defined");
+        } else {
+            console.error("container not defined");
+        }
     }
 }
 
@@ -244,94 +231,143 @@ export class TranscriptHighlights implements TranscriptHighlights {
 // PDF highlights
 // -----------------------------
 
-export class PdfPageMatch {
-    id: number;
-    page: number;
-    wordIndex: number;
-    htmlElement?: HTMLElement;
 
-    constructor(id: number, page: number, wordIndex: number, htmlElement?: HTMLElement) {
+export class PdfHighlight {
+    id: string;
+    rects: Rect[];
+    centerY: number;
+
+    constructor(id: string, rects: Rect[]) {
         this.id = id;
-        this.page = page;
-        this.wordIndex = wordIndex;
-        this.htmlElement = htmlElement;
-    }
-
-    loaded = () => {
-        return this.htmlElement != undefined;
+        this.rects = rects;
+        this.centerY = rects[0].coordinates[0].y0
     }
 }
 
-export interface PdfHighlights extends Highlights {
+export abstract class PdfHighlightsAbstract extends HighlightsAbstract {
     // variables
-    highlights: PdfPageMatch[];
+    highlights: PdfHighlight[] = [];
     eventBus?: PdfJsViewer.EventBus;
+    pdfViewer?: PdfJsViewer.PDFViewer;
+    pdfAnnotationFactory?: AnnotationFactory;
+    pdfjsLib?: any;
     source?: any;
 
     // functions
-    onMatchesFound: (event: any) => void;
-    onNoMatchesFound: () => void;
-    refreshHighlights: () => void;
-    displayedHighlights: () => string;
+    abstract onMatchesFound: (event: any) => void;
+    abstract onNoMatchesFound: () => void;
+    abstract refreshHighlights: () => void;
+    abstract displayedHighlights: () => string;
 
     // callbacks
-    scrollToHighlight: () => void;
-    prepHighlightBeforeScrolling: (performedAction: 'find' | 'resize' | 'next' | 'prev') => void;
-    _nextHighlight: () => void;
-    _previousHighlight: () => void;
+    abstract scrollToHighlight: () => void;
+    abstract prepHighlightBeforeScrolling: (performedAction: 'find' | 'resize' | 'next' | 'prev') => void;
+
 }
 
-export class PdfHighlights implements PdfHighlights {
+export class PdfHighlights extends PdfHighlightsAbstract {
 
     static create(): PdfHighlights {
         return reactive(new PdfHighlights()) as PdfHighlights;
     }
 
     // variables
-    meetingId?: string;
-    language?: string;
-    search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
     total: number = 0;
-    eventBus?: PdfJsViewer.EventBus;
-    source?: any;
+    eventBus?: PdfJsViewer.EventBus = undefined;
+    pdfViewer?: PdfJsViewer.PDFViewer = undefined;
+    pdfAnnotationFactory?: AnnotationFactory = undefined;
+    originalPdf?: Uint8Array = undefined;
 
-    private _createPageMatches = (pageMatchesArray: any[]) => {
-        let i = 0;
-        this.highlights = [];
+    updateIndexChanges(index: number) {
+        this.index = index;
+    }
 
-        for (let page = 0; page < pageMatchesArray.length; page++) {
-            pageMatchesArray[page].forEach((match: any) => {
-                const id = i;
-                const pageMatch = new PdfPageMatch(id, page, match, undefined);
-                this.highlights.push(pageMatch);
-                i++;
+    updateTotalChanges(total: number) {
+        this.total = total;
+    }
+
+    findMatches = async () => {
+        await this.clearMatches();
+
+        if (this.query!.length > 2 || this.speaker !== undefined) {
+            let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.query}`;
+            if (this.speaker)
+                URL += `&speaker=${this.speaker}`;
+            if (this.looseSearch)
+                URL += `&looseSearch=true`;
+
+            for await (const parsedChunk of super.streamingFetch(() => fetch(URL))) {
+                const highlights: Highlight[] = parsedChunk.highlights;
+                for (const highlight of highlights) {
+                    const rects = highlight.rects;
+                    if (!rects || rects.length == 0 || !rects[0].coordinates) continue;
+                    // invert the y coordinates in the highlight rectangles
+                    for (const rect of highlight.rects) {
+                        let page = rect.page;
+                        let height = this.pdfViewer?._pages![page].viewport.viewBox[3];
+                        rect.coordinates.forEach(coordinate => {
+                            coordinate.y0 = height - coordinate.y0;
+                            coordinate.y1 = height - coordinate.y1;
+                        });
+                    }
+                    this.highlights.push(new PdfHighlight(highlight.ids[0], rects));
+                    for (const rect of rects) {
+                        // Add the highlight to the PDF
+                        let quadPoints = rect.coordinates.map(coordinate => {
+                            return [
+                                coordinate.x0, coordinate.y0,
+                                coordinate.x1, coordinate.y0,
+                                coordinate.x0, coordinate.y1,
+                                coordinate.x1, coordinate.y1
+                            ];
+                        });
+                        this.pdfAnnotationFactory?.createHighlightAnnotation(
+                            {
+                                page: rect.page,
+                                quadPoints: quadPoints.flat(),
+                                opacity: 0.5,
+                                color: {r: 255, g: 255, b: 0},
+                            },
+                        );
+                    }
+                }
+            }
+
+            // sort the highlights by their id
+            this.highlights.sort((a: PdfHighlight, b: PdfHighlight) => {
+                return a.id.localeCompare(b.id, undefined, {numeric: true});
             });
+        }
+
+        if (this.pdfAnnotationFactory) {
+            this.displayPdf(true);
         }
     }
 
-    // functions
-    findMatches = () => {
-        if (this.search().length > 2) {
-            console.log(this.source)
-            /*
-            this.eventBus?.dispatch('find', {
-                source: this.source,
-                highlightAll: true,
-                type: "",
-                caseSensitive: false,
-                query: this.search().split(' ')
-            });
+    displayPdf = (shouldScrollToHighlight: boolean) => {
+        this.eventBus!.on("pagesinit", () => {
+            if (this.highlights && this.highlights.length > 0) {
+                // scroll to the first highlight
+                this.updateIndexChanges(0);
+                this.updateTotalChanges(this.highlights.length);
+                if (shouldScrollToHighlight) {
+                    this.scrollToHighlight();
+                }
+            }
+        });
 
-             */
+        this.pdfjsLib.getDocument({
+            data: this.pdfAnnotationFactory!.write().slice(0)
+        }).promise.then((pdf: any) => {
+            this.pdfViewer!.setDocument(pdf);
             this.touched = true;
-        } else if (this.total > 0) {
-            this.clearMatches();
-        }
+        });
     }
 
     onMatchesFound = (event: any) => {
+        console.log("onMatchesFound", event);
         if (event.matchesCount.total == 0) {
             console.error('calling onMatchesFound with no matches, should not happen');
             return;
@@ -339,7 +375,7 @@ export class PdfHighlights implements PdfHighlights {
         if (this.touched) {
             this.total = event.matchesCount.total;
             this.touched = false;
-            this._createPageMatches(event.source.pageMatches);
+            //this._createPageMatches(event.source.pageMatches);
             this.index = 0;
             this.prepHighlightBeforeScrolling('find');
         }
@@ -360,16 +396,33 @@ export class PdfHighlights implements PdfHighlights {
         this._reset();
     }
 
-    clearMatches = () => {
+    clearMatches = async () => {
         this._reset();
-        this.eventBus?.dispatch('find', {
-            source: this.source,
-            type: "clear"
-        })
+        const existingAnnotations = await this.pdfAnnotationFactory?.getAnnotations();
+        if (!existingAnnotations) return;
+        const flattenedAnnotations = existingAnnotations.flat();
+        if (flattenedAnnotations && flattenedAnnotations.length > 0) {
+            const annotationIdsToDelete = flattenedAnnotations.map(annot => annot.id);
+            const deletePromises = annotationIdsToDelete.map(annotationId => this.pdfAnnotationFactory?.deleteAnnotation(annotationId));
+            await Promise.all(deletePromises);
+        }
     }
 
+
     scrollToHighlight: () => void = () => {
-        console.log("scrollToHighlight not implemented");
+        if (!this.highlights || this.highlights!.length === 0)
+            return;
+
+        const currentHighlight = this.highlights[this.index];
+        const pageNumber = currentHighlight.rects[0].page;
+        const containerHeight = this.pdfViewer!._pages![pageNumber].viewport.viewBox[3];
+        const centerOffsetY = currentHighlight.centerY + containerHeight / 6;
+
+        this.pdfViewer!.scrollPageIntoView({
+            pageNumber: pageNumber + 1,
+            destArray: [null, {name: "XYZ"}, 0, centerOffsetY, null],
+            allowNegativeOffset: true
+        });
     }
 
     prepHighlightBeforeScrolling: (performedAction: 'find' | 'resize' | 'next' | 'prev') => void = () => {
@@ -377,25 +430,17 @@ export class PdfHighlights implements PdfHighlights {
     }
 
     nextHighlight = () => {
-        this.index = (this.index + 1) % this.total;
-        this._nextHighlight();
+        this.updateIndexChanges((this.index + 1) % this.total);
+        this.scrollToHighlight();
     }
 
     previousHighlight = () => {
-        this.index = (this.index - 1 + this.total) % this.total;
-        this._previousHighlight();
-    }
-
-    _nextHighlight: () => void = () => {
-        console.log("_nextHighlight not implemented");
-    }
-
-    _previousHighlight: () => void = () => {
-        console.log("_previousHighlight not implemented");
+        this.updateIndexChanges((this.index - 1 + this.total) % this.total);
+        this.scrollToHighlight();
     }
 
     displayedHighlights = () => {
-        if (this.search().length <= 2) {
+        if (this.query!.length <= 2 && this.speaker === undefined) {
             return ""
         } else if (this.total == 0) {
             return "Ni zadetkov"

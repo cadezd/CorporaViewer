@@ -1,6 +1,6 @@
-import { Module, MutationTree } from "vuex";
-import { RootState } from "@/store/index";
-import { Pagination } from "@/types/Pagination";
+import {Module, MutationTree} from "vuex";
+import {RootState} from "@/store/index";
+import {Pagination} from "@/types/Pagination";
 
 interface DocumentPaginationState {
     instance: Pagination;
