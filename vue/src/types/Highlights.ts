@@ -9,10 +9,10 @@ export abstract class HighlightsAbstract {
 
     // variables
     meetingId?: string;
+    query: string = "";
     language?: string;
     speaker?: string;
     looseSearch: boolean = false;
-    abstract search: () => string;
     index?: number;
     touched?: boolean;
     total?: number;
@@ -94,7 +94,6 @@ export class TranscriptHighlights extends TranscriptHighlightsAbstract {
         return reactive(new TranscriptHighlights()) as TranscriptHighlights;
     }
 
-    search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
     total: number = 0;
@@ -125,12 +124,12 @@ export class TranscriptHighlights extends TranscriptHighlightsAbstract {
     findMatches = async () => {
         await this.clearMatches();
 
-        if (this.search().length <= 2)
+        if (this.query!.length <= 2 && !this.speaker)
             return;
 
         let transcriptContent = new DOMParser().parseFromString(this.transcript, 'text/html');
 
-        let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
+        let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.query}`;
         if (this.language)
             URL += `&lang=${this.language}`;
         if (this.speaker)
@@ -273,12 +272,10 @@ export class PdfHighlights extends PdfHighlightsAbstract {
     }
 
     // variables
-    search: () => string = () => "";
     touched: boolean = false;
     index: number = -1;
     total: number = 0;
     eventBus?: PdfJsViewer.EventBus = undefined;
-    pdfLinkService?: pdfjsViewer.PDFLinkService = undefined;
     pdfViewer?: PdfJsViewer.PDFViewer = undefined;
     pdfAnnotationFactory?: AnnotationFactory = undefined;
     originalPdf?: Uint8Array = undefined;
@@ -294,8 +291,8 @@ export class PdfHighlights extends PdfHighlightsAbstract {
     findMatches = async () => {
         await this.clearMatches();
 
-        if (this.search().length > 2) {
-            let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.search()}`;
+        if (this.query!.length > 2 || this.speaker !== undefined) {
+            let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.query}`;
             if (this.speaker)
                 URL += `&speaker=${this.speaker}`;
             if (this.looseSearch)
@@ -411,11 +408,10 @@ export class PdfHighlights extends PdfHighlightsAbstract {
         }
     }
 
+
     scrollToHighlight: () => void = () => {
         if (!this.highlights || this.highlights!.length === 0)
             return;
-
-        console.log("scrollToHighlight", this.index, this.highlights.length);
 
         const currentHighlight = this.highlights[this.index];
         const pageNumber = currentHighlight.rects[0].page;
@@ -436,7 +432,6 @@ export class PdfHighlights extends PdfHighlightsAbstract {
     nextHighlight = () => {
         this.updateIndexChanges((this.index + 1) % this.total);
         this.scrollToHighlight();
-
     }
 
     previousHighlight = () => {
@@ -445,7 +440,7 @@ export class PdfHighlights extends PdfHighlightsAbstract {
     }
 
     displayedHighlights = () => {
-        if (this.search().length <= 2) {
+        if (this.query!.length <= 2 && this.speaker === undefined) {
             return ""
         } else if (this.total == 0) {
             return "Ni zadetkov"

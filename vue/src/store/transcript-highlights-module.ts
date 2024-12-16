@@ -16,8 +16,8 @@ const mutations: MutationTree<TranscriptHighlightsState> = {
     nextHighlight(state: TranscriptHighlightsState) {
         state.instance.nextHighlight();
     },
-    updateSearch(state: TranscriptHighlightsState, search: () => string) {
-        state.instance.search = search;
+    updateQuery(state: TranscriptHighlightsState, query: string) {
+        state.instance.query = query;
     },
     updateMeetingId(state: TranscriptHighlightsState, meetingId: string | undefined) {
         state.instance.meetingId = meetingId;
@@ -34,13 +34,7 @@ const mutations: MutationTree<TranscriptHighlightsState> = {
     async updateOriginalTranscript(state: TranscriptHighlightsState, params: { text: string, callback: () => void }) {
         state.instance.originalTranscript = params.text;
         params.callback();
-        if (state.instance.container) {
-            state.instance.container.style.scrollBehavior = "auto";
-        }
         await state.instance.findMatches();
-        if (state.instance.container) {
-            state.instance.container!.style.scrollBehavior = "smooth";
-        }
     },
     updateContainer(state: TranscriptHighlightsState, container: HTMLDivElement) {
         state.instance.container = container;

@@ -33,9 +33,9 @@ export default createStore({
             if (!pdf) this.commit("transcriptHighlightsModule/nextHighlight");
             else this.commit("pdfHighlightsModule/nextHighlight");
         },
-        updateSearch(state: RootState, search: () => string) {
-            this.commit("transcriptHighlightsModule/updateSearch", search);
-            this.commit("pdfHighlightsModule/updateSearch", search);
+        updateQuery(state: RootState, query: string) {
+            this.commit("transcriptHighlightsModule/updateQuery", query);
+            this.commit("pdfHighlightsModule/updateQuery", query);
         },
         updateMeetingId(state: RootState, meetingId: string | undefined) {
             this.commit("transcriptHighlightsModule/updateMeetingId", meetingId);

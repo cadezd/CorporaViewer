@@ -18,8 +18,8 @@ const mutations: MutationTree<PdfHighlightsState> = {
     nextHighlight(state: PdfHighlightsState) {
         state.instance.nextHighlight();
     },
-    updateSearch(state: PdfHighlightsState, search: () => string) {
-        state.instance.search = search;
+    updateQuery(state: PdfHighlightsState, query: string) {
+        state.instance.query = query;
     },
     updateMeetingId(state: PdfHighlightsState, meetingId: string | undefined) {
         state.instance.meetingId = meetingId;
