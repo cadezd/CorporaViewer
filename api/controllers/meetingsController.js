@@ -323,17 +323,99 @@ const getHighlights = async (req, res) => {
         return;
     }
 
+    // Special case if there is only a speaker we are searching for and no query
+    if (!query && speaker) {
+        const chunkSize = 5;
+        let afterKey = undefined;
+        const speakerQuery = utils.speakerSearchQueryBuilder(meetingId, speaker);
+
+        while (true) {
+            const response = await esClient.search({
+                index: process.env.SENTENCES_INDEX_NAME || 'sentences-index',
+                size: 0,
+                query: speakerQuery,
+                aggregations: {
+                    group_by_segment_id: {
+                        composite: {
+                            sources: [
+                                {
+                                    segment_sort: {
+                                        terms: {field: 'segment_id.sort', order: 'asc'}
+                                    }
+                                },
+                                {
+                                    segment_id: {
+                                        terms: {field: 'segment_id'}
+                                    }
+                                }
+                            ],
+                            size: chunkSize, // Number of buckets per page
+                            ...(afterKey ? {after: afterKey} : {})
+                        },
+                        aggregations: {
+                            sentences: {
+                                top_hits: {
+                                    sort: [
+                                        {
+                                            'sentence_id.sort': {order: 'asc'}
+                                        }
+                                    ],
+                                    _source: {
+                                        includes: ['sentence_id', 'coordinates', 'speaker', 'segment_id']
+                                    },
+                                    size: 50000
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (!response || (response && !response.aggregations.group_by_segment_id.buckets.length)) {
+                break;
+            }
+
+            const buckets = response.aggregations.group_by_segment_id.buckets;
+            const highlights = [];
+
+            for (const bucket of buckets) {
+                const ids = bucket.sentences.hits.hits.map(hit => hit._source.sentence_id);
+                const coordinates = bucket.sentences.hits.hits.map(hit => hit._source.coordinates).flat();
+                highlights.push({
+                    ids: ids,
+                    rects: utils.groupCoordinates(coordinates)
+                });
+            }
+
+            // Send the partial response to the client
+            res.write(JSON.stringify({
+                speaker: speaker,
+                highlights: highlights
+            }) + "\n");
+
+            if (!response.aggregations.group_by_segment_id.after_key || response.aggregations.group_by_segment_id.buckets.length < chunkSize) {
+                break;
+            }
+
+            afterKey = response.aggregations.group_by_segment_id.after_key
+        }
+
+        res.end();
+        return;
+    }
+
     // Tokenize the query and separate it into words and phrases
     let words = undefined;
     let phrases = undefined;
-    if (query) {
-        const tokens = utils.tokenizeQuery(query)
-            .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
-            .map(tokens => tokens.map(token => token.replaceAll(/[^a-zA-Z0-9]/g, '')))
-            .map(tokens => tokens.filter(token => token.length > 0));
-        words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
-        phrases = tokens.filter(token => token.length > 1);
-    }
+    const tokens = utils.tokenizeQueryDocumentSearch(query)
+        .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
+        .map(tokens => tokens.map(token => token.replaceAll(/[^a-zA-Z0-9]/g, '')))
+        .map(tokens => tokens.filter(token => token.length > 0));
+    words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
+    phrases = tokens.filter(token => token.length > 1);
+
+    console.log(tokens);
+
 
     // Point in time id for words and sentences index
     let wordsIndexPITId = undefined;
@@ -403,7 +485,12 @@ const getHighlights = async (req, res) => {
             });
 
             // Send the partial response to the client
-            res.write(JSON.stringify({words: words, phrases: phrases, highlights: filteredHighlights}) + "\n");
+            res.write(JSON.stringify({
+                words: words,
+                phrases: phrases,
+                speaker: speaker,
+                highlights: filteredHighlights
+            }) + "\n");
 
             // If there are fewer results than the chunk size, break the loop
             if ((singleWordsResponse && singleWordsResponse.hits.hits.length < chunkSize) && (phrasesResponse && phrasesResponse.hits.hits.length < chunkSize)) {
@@ -477,10 +564,11 @@ const getSpeakers = async (req, res) => {
             }
         });
 
-        const uniqueSpeakers = response.aggregations.unique_speakers.buckets
+        let uniqueSpeakers = response.aggregations.unique_speakers.buckets
             .map(bucket => bucket.key.trim())
             // remove empty speakers
             .filter(speaker => speaker)
+
             // filter out speakers that don't have capitalized first and last word and contain any digit and dont contain "Poslanec" and "Abgeordneter" or contain only one of them
             .filter((speaker) => {
                 let isFirstWordCapitalized = speaker[0] === speaker[0].toUpperCase();
@@ -494,15 +582,8 @@ const getSpeakers = async (req, res) => {
                 return isFirstWordCapitalized && isLastWordCapitalized && !containsDigit && ((!containsPoslanec && !containsAbgeordneter) || (!containsPoslanec && containsAbgeordneter) || (containsPoslanec && !containsAbgeordneter));
             });
 
-        // Add "Landeshauptmann" to the first index list of speakers if it is not already there
-        if (!uniqueSpeakers.includes("Landeshauptmann")) {
-            uniqueSpeakers.unshift("Landeshauptmann");
-        }
-
-        // Add "Deželni glavar" to the first index list of speakers if it is not already there
-        if (!uniqueSpeakers.includes("Deželni glavar")) {
-            uniqueSpeakers.unshift("Deželni glavar");
-        }
+        // remove duplicates
+        uniqueSpeakers = [...new Set(uniqueSpeakers)];
 
         res.json({
             speakers: uniqueSpeakers
