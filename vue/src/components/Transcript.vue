@@ -63,7 +63,7 @@ import {Ref} from 'vue-property-decorator';
 import {mapGetters, mapMutations} from 'vuex';
 
 @Options({
-  emits: ['matchesChange', 'loaded'],
+  emits: ['loading', 'loaded'],
   computed: {
     ...mapGetters('transcriptHighlightsModule', ['transcriptHighlightsInstance']),
     ...mapGetters('documentPaginationModule', ['documentPaginationInstance']),
@@ -93,6 +93,8 @@ export default class Transcript extends Vue {
   }
 
   mounted() {
+    this.$emit('loading');
+
     this.transcriptContainer.addEventListener('scroll', () => {
       this.pagination.transcriptScrollPercent = (
           this.transcriptContainer.scrollTop /
@@ -109,6 +111,7 @@ export default class Transcript extends Vue {
     }
     this.transcriptContainer.style.scrollBehavior = 'smooth';
 
+    this.$emit('loaded');
   }
 
   findHighlight() {
