@@ -39,7 +39,7 @@ const cleanQuery = (obj) => {
 /**
  * Tokenizes the words
  * @param {string} query
- * @returns {string[][]} - The tokenized words
+ * @returns {string[][]} - The tokenized words.
  */
 const tokenizeQuery = (query) => {
     const orQueries = query.split("OR");
@@ -50,6 +50,33 @@ const tokenizeQuery = (query) => {
         const wordsWithoutQuotes = orQuery.replace(/"([^"]+)"/g, '').split(" ").filter(word => word !== "");
         return [...(wordsInQuotes || []), ...(wordsWithoutQuotes || [])];
     });
+}
+
+/**
+ * Tokenizes the query for searching words in the specified document.
+ * @param {string} query - The query to tokenize.
+ * @returns {string[][]} - The tokenized words.
+ */
+const tokenizeQueryDocumentSearch = (query) => {
+    // Match quoted strings and non-quoted parts
+    const regex = /"([^"]+)"|'([^']+)'|(\S+)/g;
+    let groupedTokens = [];
+    let match;
+
+    while ((match = regex.exec(query)) !== null) {
+        if (match[1]) {
+            // Double-quoted text, split into tokens
+            groupedTokens.push(match[1].split(/\s+/));
+        } else if (match[2]) {
+            // Single-quoted text, split into tokens
+            groupedTokens.push(match[2].split(/\s+/));
+        } else if (match[3]) {
+            // Non-quoted part
+            groupedTokens.push([match[3]]);
+        }
+    }
+
+    return groupedTokens;
 }
 
 const parseSpeaker = (speaker_list) => {
@@ -111,19 +138,13 @@ const formatDate = (date, format) => {
 // joins words so that punctuation is not separated from the word
 const joinWords = (words) => {
     let joined = [];
-    let charactersLeft = '([{»„‘\'\"“';
-    let charactersRight = '.,:;?!)]}«“’\'\"”';
-    let word = '';
     for (let i = 0; i < words.length; i++) {
-        word = words[i].text;
-        if (i + 1 < words.length && (charactersLeft.includes(word.trim()) || charactersRight.includes(words[i + 1].text.trim()))) {
-            joined.push(buildHtmlElement(`<span id='${words[i].id}'>`, word.trim(), "", "</span>"));
-            joined.push(buildHtmlElement(`<span id='${words[i + 1].id}'>`, words[i + 1].text.trim(), "", "</span>"));
-            i++;
-        } else {
-            joined.push(buildHtmlElement(`<span id='${words[i].id}'>`, word.trim(), "", "</span>"));
+        let word = words[i];
+        joined.push(buildHtmlElement(`<span id='${word.id}'>`, word.text, "", "</span>"));
+        // Attribute join is used to determine if the word should be joined with the next word
+        if (word.join === "natural") {
+            joined.push(' ');
         }
-        joined.push(' ');
     }
     return joined.join('');
 }
@@ -335,6 +356,36 @@ const buildQueryBody = (words, placeNames, speaker, filters) => {
     return bodyQuery
 }
 
+/**
+ * Returns the query body for searching segments where provided speaker spoke in the meetling with given id.
+ *
+ * @param {string} meetingId
+ * @param {string} speaker
+ */
+const speakerSearchQueryBuilder = (meetingId, speaker) => {
+    return {
+        bool: {
+            filter: [
+                {
+                    term: {
+                        meeting_id: meetingId
+                    }
+                }
+            ],
+            must: [
+                {
+                    match: {
+                        speaker: {
+                            query: speaker,
+                            fuzziness: "2",
+                        }
+                    }
+                }
+            ]
+        }
+    };
+}
+
 
 /**
  * Returns the query body for searching words in meeting with given id and other filters or an empty object if the meeting id or words are not provided.
@@ -404,7 +455,6 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
  * @returns {{bool: {filter: [{term: {meeting_id}},{terms: {sentence_id}}]}}}
  */
 const sentencesCoordinatesQueryBuilder = (meetingId, sentencesIds) => {
-    // TODO: figure something out for the case when meetingId is not provided
     if (!meetingId)
         throw new Error("Meeting id is required for building the query body");
 
@@ -471,7 +521,8 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
         }
     });
 
-    let queryBody = {
+    // Remove null and undefined values from the query body
+    return {
         bool: {
             filter: [
                 {
@@ -522,9 +573,6 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
             ]
         }
     };
-
-    // Remove null and undefined values from the query body
-    return queryBody;
 }
 
 /**
@@ -593,6 +641,7 @@ const groupCoordinates = (coordinates) => {
 module.exports = {
     shouldMatchLemmaAndText,
     tokenizeQuery,
+    tokenizeQueryDocumentSearch,
     parseSpeaker,
     parsePlace,
     parseSort,
@@ -605,6 +654,7 @@ module.exports = {
     getAgendaTitle,
     buildHtmlElement,
     buildQueryBody,
+    speakerSearchQueryBuilder,
     wordsSearchQueryBuilder,
     sentencesCoordinatesQueryBuilder,
     phrasesSearchQueryBuilder,
