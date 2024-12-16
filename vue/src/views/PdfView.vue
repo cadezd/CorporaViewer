@@ -1,164 +1,269 @@
 <template>
-  <!-- Toolbar -->
-  <div class="toolbar-container">
-    <!-- Toolbar title -->
-    <div class="title">
-      <h3><strong>{{ $t('toolbar') }}</strong></h3>
-    </div>
-
-    <!-- Toggle between original PDF and transcript -->
-    <div class="toolbar-control-container">
-      <div class="toolbar-label">
-        <h5>{{ $t('show') }}</h5>
-      </div>
-      <div class="toolbar-content">
-        <select class="input-field" v-model="show">
-          <option value="pdf" id="choosePdfOption">{{ $t('originalDocument') }}</option>
-          <option value="transcript">{{ $t('transcript') }}</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Language selection -->
-    <div class="toolbar-control-container" v-if="show === 'transcript'">
-      <div class="toolbar-label">
-        <h5>{{ $t('transcriptLanguage') }}</h5>
-      </div>
-      <div class="toolbar-content">
-        <select class="input-field" v-model="transcriptLanguage">
-          <option value="">{{ $t('dontTranslate') }}</option>
-          <option value="sl">{{ $t('sl') }}</option>
-          <option value="de">{{ $t('de') }}</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Search bar -->
-    <div class="toolbar-control-container">
-      <div class="toolbar-label">
-        <h5>{{ $t('textSearch') }}</h5>
-      </div>
-      <div class="toolbar-content">
-
-        <div class="row">
-          <div class="row col-md-9">
-            <!-- Search bar for searching the document content  -->
-            <input
-                type="text"
-                class="form-control input-field"
-                :placeholder="$t('searchBarPlaceholder')"
-                v-model="wordsToHighlight"
-                @keyup.enter="search"
-            />
-
-            <!-- Option list for choosing speaker -->
-            <Typeahead
-                :placeholder="$t('allSpeakers')"
-                :list="speakerList"
-                :displayFn="speakerDisplayFn"
-                :emptyItem="undefined"
-                :getter="getSelectedSpeaker"
-                @selectedChange="handleSearchChanged"
-            />
-
-
-          </div>
-          <div class="col-md-3 search-bar-button-container row">
-            <!-- Search button -->
-            <button class="col-md-5 btn btn-default" type="button" @click="searchForHighlights">
-              <i class="fa fa-search"></i>
-            </button>
-            <!-- Clear button-->
-            <button class="col-md-5 btn btn-default btn-warn" type="button" @click="clear">
-              <i class="fa fa-xmark"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="row py-2 my-2">
-          <input
-              type="checkbox"
-              id="looseSearch"
-              class="col-1 d-flex align-content-start"
-              placeholder="Loose search"
-              v-model="looseSearch"
-          />
-          <label for="looseSearch" class="col-11 d-flex align-content-start">{{ $t('looseSearch') }}</label>
-        </div>
-
-        <div class="content-search-buttons">
-          <div class="btn btn-primary content-search-button" @click="previousHighlightClick()"
-               v-if="showNextPrevHighlightButtons()">
-            <i class="fas fa-arrow-left"></i>
-          </div>
-          <div class="btn btn-primary content-search-button" @click="nextHighlightClick()"
-               v-if="showNextPrevHighlightButtons()">
-            <i class="fas fa-arrow-right"></i>
-          </div>
-        </div>
-        <div class="highlight-text-info" v-if="show === 'pdf'">
-          {{
-            pdfHighlightsInstance.displayedHighlights()
-          }}
-        </div>
-        <div class="highlight-text-info" v-if="show === 'transcript'">
-          {{
-            getTranscriptHighlights()
-          }}
-        </div>
-      </div>
-    </div>
-
-    <!-- Search info -->
-    <div class="toolbar-tooltip">
-      <button class="btn btn-primary btn-tooltip" @click="toggleTooltip" :class="{ 'btn-disabled': showTooltip }">
-        <i class="fas fa-info-circle"></i>
-      </button>
-      <div class="tooltip-text" :class="{ 'tooltip-hidden': !showTooltip }">
-        <button class="btn btn-primary hide-button" @click="toggleTooltip"><i class="fas fa-eye-slash"></i></button>
-        <p>{{ $t('tooltip') }}</p>
-      </div>
-    </div>
-
-    <!-- Pagination -->
-    <div class="pagination-control-container" v-if="show === 'pdf'">
-      <button class="btn btn-primary pagination-button" @click="documentPagination.previousPage()"
-              :disabled="!documentPagination.hasPreviousPage()" :class="{ 'button-disbled': matchLoading }">
-        <i class="fas fa-arrow-left"></i>
-      </button>
-      <div class="pagination">
-        <span class="max-pages">{{ $t('page') }}&nbsp;&nbsp;</span>
-        <input type="number" class="page-input" v-model="pageInput" :min="1" :max="documentPagination.total"
-               @keyup.enter="applyPageInput()" @blur="applyPageInput()" :class="{ 'button-disbled': matchLoading }">
-        <span class="max-pages">/ {{ documentPagination.total() }}</span>
-      </div>
-      <button class="btn btn-primary pagination-button" @click="documentPagination.nextPage()"
-              :disabled="!documentPagination.hasNextPage()">
-        <i class="fas fa-arrow-right"></i>
-      </button>
-    </div>
-
-  </div>
   <!-- PDF / transcript container -->
   <div class="pdf-viewer-container">
+
+    <!-- Toolbar for mobile devices -->
+    <div v-if="!windowAllowsPdfDisplay()" class="toolbar-container">
+
+      <!-- Hamburger Menu Toggle Button -->
+      <div class="hamburger-menu" @click="showToolbar = !showToolbar">
+        <i class="fa" :class="showToolbar ? 'fa-xmark' : 'fa-bars'"></i>
+        <div class="title">
+          <h3><strong>{{ $t('toolbar') }}</strong></h3>
+        </div>
+        <div></div>
+      </div>
+
+      <div v-if="showToolbar" class="toolbar-content-wrapper">
+        <!-- Language selection -->
+        <div class="toolbar-control-container language-control" v-if="show === 'transcript'">
+          <div class="toolbar-label">
+            <h5>{{ $t('language') }}</h5>
+          </div>
+          <div class="toolbar-content">
+            <select class="input-field" v-model="transcriptLanguage">
+              <option value="">{{ $t('dontTranslate') }}</option>
+              <option value="sl">{{ $t('sl') }}</option>
+              <option value="de">{{ $t('de') }}</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Search bar -->
+        <div class="toolbar-control-container">
+          <div class="toolbar-label">
+            <h5>{{ $t('textSearch') }}</h5>
+          </div>
+          <div class="toolbar-content">
+
+            <div class="row">
+              <div class="row col-9">
+                <!-- Search bar for searching the document content  -->
+                <input
+                    type="text"
+                    class="form-control input-field"
+                    :placeholder="$t('searchBarPlaceholder')"
+                    v-model="query"
+                    @keyup.enter="searchForHighlights"
+                />
+
+                <!-- Option list for choosing speaker -->
+                <Typeahead
+                    :placeholder="$t('allSpeakers')"
+                    :list="speakerList"
+                    :displayFn="speakerDisplayFn"
+                    :emptyItem="undefined"
+                    :getter="getSelectedSpeaker"
+                    @selectedChange="handleSpeakerChanged"
+                />
+
+              </div>
+              <div class="col-3 search-bar-button-container row">
+                <!-- Search button -->
+                <button class="btn btn-default" type="button" @click="searchForHighlights">
+                  <i class="fa fa-search"></i>
+                </button>
+                <!-- Clear button-->
+                <button class="btn btn-default btn-warn" type="button" @click="clear">
+                  <i class="fa fa-xmark"></i>
+                </button>
+              </div>
+            </div>
+            <div class="row py-2 my-2">
+              <input
+                  type="checkbox"
+                  id="looseSearch"
+                  class="col-1 d-flex align-content-start form-check-input checkbox"
+                  placeholder="Loose search"
+                  v-model="looseSearch"
+              />
+              <label for="looseSearch" class="col-11 d-flex align-content-start">{{ $t('looseSearch') }}</label>
+            </div>
+
+            <div class="content-search-buttons">
+              <div class="btn btn-primary content-search-button" @click="previousHighlightClick"
+                   v-if="showNextPrevHighlightButtons()">
+                <i class="fas fa-arrow-left"></i>
+              </div>
+              <div class="btn btn-primary content-search-button" @click="nextHighlightClick"
+                   v-if="showNextPrevHighlightButtons()">
+                <i class="fas fa-arrow-right"></i>
+              </div>
+            </div>
+            <div class="highlight-text-info" v-if="show === 'pdf'">
+              {{
+                pdfHighlightsInstance.displayedHighlights()
+              }}
+            </div>
+            <div class="highlight-text-info" v-if="show === 'transcript'">
+              {{
+                getTranscriptHighlights()
+              }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
     <!-- Display of original document -->
-    <PdfDisplay v-if="show === 'pdf' && pdfHighlights.pdfAnnotationFactory"
-                :class="{ 'blur': loading || matchLoading, 'scrollable': show === 'pdf' }"
-                v-bind:meeting_id="meeting_id" v-bind:matchLoading="matchLoading" @loaded="handlePdfLoaded"
-                @matchLoaded="handleMatchLoaded"
-                @loadingNewMatch="newMatchLoading" @loading="handlePdfLoading"
-                @executeInitialSearch="executeInitialSearch"></PdfDisplay>
+    <PdfDisplay v-if="pdfHighlights.pdfAnnotationFactory && windowAllowsPdfDisplay()"
+                :class="{ 'blur': loading, 'scrollable': show === 'pdf' }"
+                v-bind:meeting_id="meeting_id" @loaded="handleLoaded"
+                @loading="handleLoading"
+                @executeInitialSearch="executeInitialSearch" match-loading></PdfDisplay>
     <!-- Display of transcript -->
-    <Transcript v-else-if="show === 'transcript'"
+    <Transcript v-if="show === 'transcript'"
                 :class="{ 'blur': loading, 'scrollable': show === 'transcript' }"
-                @loaded="handlePdfLoaded">
+                @loaded="handleLoaded" @loading="handleLoading">
     </Transcript>
     <!-- Display of loading whell -->
-    <div class="loading-container" v-if="loading || matchLoading">
+    <div class="loading-container" v-if="loading">
       <div class="spinner-border" role="status">
         <span class="sr-only">{{ $t('loading') }}</span>
       </div>
     </div>
+
+    <!-- Toolbar for PC -->
+    <div class="toolbar-container" v-if="windowAllowsPdfDisplay()">
+      <!-- Toolbar title -->
+      <div class="title">
+        <h3><strong>{{ $t('toolbar') }}</strong></h3>
+      </div>
+
+      <!-- Toggle between original PDF and transcript -->
+      <div class="toolbar-control-container">
+        <div class="toolbar-label">
+          <h5>{{ $t('show') }}</h5>
+        </div>
+        <div class="toolbar-content">
+          <select class="input-field" v-model="show">
+            <option value="pdf" id="choosePdfOption">{{ $t('originalDocument') }}</option>
+            <option value="transcript">{{ $t('transcript') }}</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Language selection -->
+      <div class="toolbar-control-container" v-if="show === 'transcript'">
+        <div class="toolbar-label">
+          <h5>{{ $t('transcriptLanguage') }}</h5>
+        </div>
+        <div class="toolbar-content">
+          <select class="input-field" v-model="transcriptLanguage">
+            <option value="">{{ $t('dontTranslate') }}</option>
+            <option value="sl">{{ $t('sl') }}</option>
+            <option value="de">{{ $t('de') }}</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Search bar -->
+      <div class="toolbar-control-container">
+        <div class="toolbar-label">
+          <h5>{{ $t('textSearch') }}</h5>
+        </div>
+        <div class="toolbar-content">
+
+          <div class="row">
+            <div class="row col-md-9">
+              <!-- Search bar for searching the document content  -->
+              <input
+                  type="text"
+                  class="form-control input-field"
+                  :placeholder="$t('searchBarPlaceholder')"
+                  v-model="query"
+                  @keyup.enter="searchForHighlights"
+              />
+
+              <!-- Option list for choosing speaker -->
+              <Typeahead
+                  :placeholder="$t('allSpeakers')"
+                  :list="speakerList"
+                  :displayFn="speakerDisplayFn"
+                  :emptyItem="undefined"
+                  :getter="getSelectedSpeaker"
+                  @selectedChange="handleSpeakerChanged"
+              />
+
+
+            </div>
+            <div class="col-md-3 search-bar-button-container row">
+              <!-- Search button -->
+              <button class="col-md-5 btn btn-default" type="button" @click="searchForHighlights">
+                <i class="fa fa-search"></i>
+              </button>
+              <!-- Clear button-->
+              <button class="col-md-5 btn btn-default btn-warn" type="button" @click="clear">
+                <i class="fa fa-xmark"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="row py-2 my-2">
+            <input
+                type="checkbox"
+                id="looseSearch"
+                class="col-1 d-flex align-content-start form-check-input checkbox"
+                placeholder="Loose search"
+                v-model="looseSearch"
+            />
+            <label for="looseSearch" class="col-11 d-flex align-content-start">{{ $t('looseSearch') }}</label>
+          </div>
+
+          <div class="content-search-buttons">
+            <div class="btn btn-primary content-search-button" @click="previousHighlightClick"
+                 v-if="showNextPrevHighlightButtons()">
+              <i class="fas fa-arrow-left"></i>
+            </div>
+            <div class="btn btn-primary content-search-button" @click="nextHighlightClick"
+                 v-if="showNextPrevHighlightButtons()">
+              <i class="fas fa-arrow-right"></i>
+            </div>
+          </div>
+          <div class="highlight-text-info" v-if="show === 'pdf'">
+            {{
+              pdfHighlightsInstance.displayedHighlights()
+            }}
+          </div>
+          <div class="highlight-text-info" v-if="show === 'transcript'">
+            {{
+              getTranscriptHighlights()
+            }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Search info -->
+      <div class="toolbar-tooltip">
+        <button class="btn btn-primary btn-tooltip" @click="toggleTooltip" :class="{ 'btn-disabled': showTooltip }">
+          <i class="fas fa-info-circle"></i>
+        </button>
+        <div class="tooltip-text" :class="{ 'tooltip-hidden': !showTooltip }">
+          <button class="btn btn-primary hide-button" @click="toggleTooltip"><i class="fas fa-eye-slash"></i></button>
+          <p>{{ $t('tooltip') }}</p>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination-control-container" v-if="show === 'pdf'">
+        <button class="btn btn-primary pagination-button" @click="documentPagination.previousPage()"
+                :disabled="!documentPagination.hasPreviousPage()">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <div class="pagination">
+          <span class="max-pages">{{ $t('page') }}&nbsp;&nbsp;</span>
+          <input type="number" class="page-input" v-model="pageInput" :min="1" :max="documentPagination.total"
+                 @keyup.enter="applyPageInput()" @blur="applyPageInput()">
+          <span class="max-pages">/ {{ documentPagination.total() }}</span>
+        </div>
+        <button class="btn btn-primary pagination-button" @click="documentPagination.nextPage()"
+                :disabled="!documentPagination.hasNextPage()">
+          <i class="fas fa-arrow-right"></i>
+        </button>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -305,15 +410,17 @@
   align-items: center;
 }
 
+
 .pdf-container {
+  min-width: 1000px;
+  width: 69vw;
+  height: 0vh;
   position: absolute;
-  width: 70%;
   left: 1vw;
   margin: 1rem auto 0 auto;
   background-color: #f0f7ee;
-  border-radius: 5px !important;
+  border-radius: 10px !important;
   overflow: hidden;
-  scroll-behavior: smooth;
 }
 
 .page {
@@ -322,7 +429,7 @@
 }
 
 .transcript-container {
-  width: 70%;
+  width: 69vw;
   height: 0vh;
   position: absolute;
   left: 1vw;
@@ -331,7 +438,7 @@
   background-color: #f0f7ee;
   border-radius: 10px !important;
   overflow-y: hidden;
-  padding: 2rem;
+  padding: 1rem;
 }
 
 .scrollable {
@@ -342,7 +449,7 @@
 }
 
 .toolbar-container {
-  width: 27%;
+  width: 27vw;
   height: 89vh;
   position: absolute;
   right: 0;
@@ -372,9 +479,6 @@
   align-items: center;
 }
 
-.spinner-border {
-  color: #f0f7ee !important;
-}
 
 .loading-text {
   position: absolute;
@@ -462,14 +566,19 @@ input[type=number] {
   background-color: rgba(255, 0, 255) !important;
 }
 
-.blur > * {
+.blur {
+  overflow-y: hidden !important;
+}
+
+
+.blur ::v-deep > * {
   filter: blur(20px);
 }
 
-.blur {
-  overflow-y: hidden !important;
-
+.hide {
+  display: none;
 }
+
 
 .btn-disabled:hover {
   pointer-events: none;
@@ -484,11 +593,29 @@ input[type=number] {
 }
 
 @media (max-width: 1350px) {
+
+  .hamburger-menu {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 3rem;
+    padding: 0 1rem;
+    cursor: pointer;
+    font-size: 1.5rem;
+    color: #333;
+    border-bottom: 4px solid #708d81;
+  }
+
+  .pdf-viewer-container {
+    display: flex;
+    flex-direction: column;
+  }
+
   .transcript-container {
-    position: absolute;
+    position: relative;
     margin: 1rem;
     left: 0;
-    width: fit-content;
+    width: calc(100vw - 2rem);
     height: unset;
     border-radius: 10px;
   }
@@ -501,9 +628,10 @@ input[type=number] {
     top: 0;
     left: 0;
     height: fit-content;
-    margin: 1rem;
+    margin: 1rem 1rem 0 1rem;
     z-index: 5;
-    display: grid;
+    display: flex;
+    flex-direction: column;
     transition: all 0.2s ease-in-out;
   }
 
@@ -515,22 +643,11 @@ input[type=number] {
     font-size: 1rem;
   }
 
-  .pdf-container {
-    left: 0;
-    width: calc(100% - 2rem);
-    margin: 1rem;
-  }
-
-  .scrollable {
-    height: 70vh;
-  }
-
-  .pagination-control-container {
-    position: static;
-  }
-
-  .transparent {
-    background-color: transparent !important;
+  .loading-container {
+    z-index: 1000;
+    position: absolute;
+    top: 50%;
+    left: 50%;
   }
 
   .language-control {
@@ -586,11 +703,11 @@ import {Pagination} from '@/types/Pagination';
     ...mapGetters('documentPaginationModule', ['documentPaginationInstance']),
   },
   methods: {
-    ...mapMutations(['findMatches', 'nextHighlight', 'previousHighlight', 'updateSearch', 'updateMeetingId', 'updateLanguage', 'updateSpeaker', 'updateLooseSearch', 'reset']),
+    ...mapMutations(['findMatches', 'nextHighlight', 'previousHighlight', 'updateQuery', 'updateMeetingId', 'updateLanguage', 'updateSpeaker', 'updateLooseSearch', 'reset']),
     ...mapMutations('searchParamsModule', ['']),
     ...mapMutations('transcriptHighlightsModule', ['updateOriginalTranscript', 'setUpdateTranscriptIndex', 'setUpdateTranscriptTotal',]),
     ...mapMutations('pdfHighlightsModule', ['updatePdfAnnotationFactory']),
-    ...mapMutations('documentPaginationModule', ['setPage', 'updatePageInputFunctions'])
+    ...mapMutations('documentPaginationModule', ['setPage', 'updatePageInputFunctions', 'resetPagination'])
   }
 })
 
@@ -620,10 +737,8 @@ export default class PdfView extends Vue {
 
   show: string = ''
   loading: boolean = false;
-  matchLoading: boolean = false;
-  nextMatchTimeout?: number;
 
-  wordsToHighlight: string = '';
+  query: string = '';
   speaker?: string = '';
   looseSearch: boolean = false;
 
@@ -635,19 +750,14 @@ export default class PdfView extends Vue {
   transcriptTotal: number = 0;
 
   showTooltip: boolean = false;
+  showToolbar: boolean = true;
 
   async mounted(): Promise<void> {
-    this.handlePdfLoading();
-    this.show = 'pdf';
+    this.handleLoading();
+    this.show = this.windowAllowsPdfDisplay() ? 'pdf' : 'transcript';
 
-    window.addEventListener('resize', () => {
-      this.windowWidth = window.innerWidth;
-      this.documentPagination.setPage(this.documentPagination.getPage());
-    });
-
-    window.addEventListener('scroll', () => {
-      this.scrollHeight = window.scrollY;
-    });
+    window.addEventListener('resize', this.onResize);
+    window.addEventListener('scroll', this.onScroll);
 
     this.firstLoad = true;
 
@@ -658,49 +768,48 @@ export default class PdfView extends Vue {
     this.getTranscript();
   }
 
-  async unmounted(): Promise<void> {
-    window.removeEventListener('resize', () => {
-      this.windowWidth = window.innerWidth;
-    });
+  unmounted(): void {
+    window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('scroll', this.onScroll);
 
-    window.removeEventListener('scroll', () => {
-      this.scrollHeight = window.scrollY;
-    });
-
-    this.updateSearch('');
-    this.updateMeetingId(undefined);
-    this.updateLanguage(undefined);
-    await this.updatePdfAnnotationFactory(undefined);
-    this.pdfHighlights.highlights = [];
-    this.documentPagination.reset();
+    this.resetStoreParams();
   }
 
-  handlePdfLoading() {
-    this.loading = true;
-    this.matchLoading = true;
-  }
-
-  handlePdfLoaded() {
-    this.loading = false;
-    this.matchLoading = false;
-  }
-
-  handleMatchLoaded() {
-    this.matchLoading = false;
-    this.nextMatchTimeout && clearTimeout(this.nextMatchTimeout);
-  }
-
-  initialTranscriptSearchCallback() {
-    if (this.firstLoad) {
-      this.firstLoad = false;
-      this.executeInitialSearch();
+  /* Event listener functions */
+  onResize() {
+    this.windowWidth = window.innerWidth;
+    if (!this.windowAllowsPdfDisplay()) {
+      const choosePdfOption = document.getElementById('choosePdfOption') as HTMLOptionElement;
+      if (choosePdfOption !== null) {
+        choosePdfOption.disabled = true;
+      }
+      this.show = 'transcript';
+      this.handleLoaded();
+    } else {
+      const choosePdfOption = document.getElementById('choosePdfOption') as HTMLOptionElement;
+      if (choosePdfOption !== null) {
+        choosePdfOption.disabled = false;
+      }
     }
   }
 
+  onScroll() {
+    this.scrollHeight = window.scrollY;
+  }
+
+  handleLoading() {
+    this.loading = true;
+  }
+
+  handleLoaded() {
+    this.loading = false;
+  }
+
+
   /*
-  //@Watch('wordsToHighlight')
-  onWordsToHighlightChange() {
-    if (this.wordsToHighlight.length > 2 && this.windowAllowsPdfDisplay()) {
+  //@Watch('query')
+  onqueryChange() {
+    if (this.query.length > 2 && this.windowAllowsPdfDisplay()) {
       this.newMatchLoading();
     }
     if (this.windowAllowsPdfDisplay()) this.findMatches();
@@ -709,18 +818,22 @@ export default class PdfView extends Vue {
    */
 
   searchForHighlights() {
-    if (this.wordsToHighlight.length > 2 && this.windowAllowsPdfDisplay()) {
-      this.newMatchLoading();
-    }
+    this.handleLoading();
+
     if (this.windowAllowsPdfDisplay()) this.findMatches();
     else this.transcriptHighlights.findMatches();
+
+    setTimeout(() => {
+      this.handleLoaded();
+    }, 1000);
   }
 
   clear() {
     this.looseSearch = false;
-    this.wordsToHighlight = '';
+    this.query = '';
     this.updateSpeaker(undefined);
 
+    this.resetPagination();
     if (this.windowAllowsPdfDisplay()) this.findMatches();
     else this.transcriptHighlights.findMatches();
   }
@@ -728,6 +841,10 @@ export default class PdfView extends Vue {
   @Watch('transcriptLanguage') onTranscriptLanguageChanged() {
     this.getTranscript();
     this.updateLanguage(this.transcriptLanguage ? this.transcriptLanguage : undefined);
+  }
+
+  @Watch('query') onQueryChanged() {
+    this.updateQuery(this.query);
   }
 
   @Watch('looseSearch') onLooseSearchChanged() {
@@ -739,7 +856,7 @@ export default class PdfView extends Vue {
       if (this.pdfHighlights.total === 0) {
         this.documentPagination.syncPdfToTranscriptScroll();
       } else if (this.transcriptHighlights.total === 0) {
-        this.findMatches(this.wordsToHighlight);
+        this.findMatches();
       }
     }
 
@@ -758,7 +875,6 @@ export default class PdfView extends Vue {
 
   getTranscript() {
     // get meeting as text with meeting_id and transcriptLanguage
-    this.handlePdfLoading();
     axios.get(process.env.VUE_APP_API_URL + `/meetings/${this.meeting_id}/getMeetingAsText`, {
       params: {
         lang: this.transcriptLanguage,
@@ -767,8 +883,7 @@ export default class PdfView extends Vue {
     }).then((response) => {
       this.updateOriginalTranscript({
         text: response.data.text,
-        callback: !this.windowAllowsPdfDisplay() ? this.initialTranscriptSearchCallback : () => {
-          this.handlePdfLoaded();
+        callback: !this.windowAllowsPdfDisplay() ? this.executeInitialSearch : () => {
         }
       });
     }).catch((error) => {
@@ -794,21 +909,33 @@ export default class PdfView extends Vue {
     return this.transcriptHighlights.speaker;
   }
 
-  getWordsToHighlight(): string {
-    // replace all non characters (except dot, quotes and slovenian characters) with space, then remove all double spaces
-    return this.wordsToHighlight.replace(/[^a-zA-Z0-9\s\.\u0106\u010c\u0160\u017d\u0107\u010d\u0161\u017e]/g, " ").replace(/\s+/g, " ").trim();
-  }
 
   initStoreParams(): void {
     this.updatePageInputFunctions({
       getPageInput: this.getPageInput,
       setPageInput: this.setPageInput
     });
-    this.updateSearch(this.getWordsToHighlight);
     this.updateMeetingId(this.meeting_id)
 
     this.setUpdateTranscriptIndex(this.updateTranscriptIndex);
     this.setUpdateTranscriptTotal(this.updateTranscriptTotal);
+  }
+
+  resetStoreParams(): void {
+    this.updateQuery('');
+    this.updateMeetingId(undefined);
+    this.updateLanguage(undefined);
+    this.updateSpeaker(undefined);
+    this.updateLooseSearch(false);
+    this.updatePdfAnnotationFactory(undefined);
+    this.updateOriginalTranscript({
+      text: '',
+      callback: () => {
+      }
+    });
+
+    this.pdfHighlights.highlights = [];
+    this.documentPagination.reset();
   }
 
   // HIGHLIGHT FUNCTIONS
@@ -816,27 +943,15 @@ export default class PdfView extends Vue {
     return speaker;
   }
 
-  handleSearchChanged(speaker: string) {
+  handleSpeakerChanged(speaker: string) {
     this.updateSpeaker(speaker);
   }
 
   showNextPrevHighlightButtons() {
     if (this.show === 'pdf')
-      return this.pdfHighlights.total > 1 && this.wordsToHighlight !== '';
+      return this.pdfHighlights.total > 1;
     else
       return this.transcriptHighlights.total > 1;
-  }
-
-  matchChangeButtonDisabled() {
-    return this.matchLoading;
-  }
-
-  newMatchLoading() {
-    this.matchLoading = true;
-
-    this.nextMatchTimeout = setTimeout(() => {
-      this.matchLoading = false;
-    }, 4000);
   }
 
   async initSpeakerList() {
@@ -844,7 +959,6 @@ export default class PdfView extends Vue {
     const response = await fetch(`${process.env.VUE_APP_API_URL}/meetings/${this.meeting_id}/getSpeakers`);
     const data = await response.json();
     this.speakerList = data.speakers;
-
     // If speaker is selected, find the most similar speaker from the list set it as selected
     if (this.searchParams.speaker) {
       let selectedSpeakerLastName = this.searchParams.speaker.names[0].split(" ").pop();
@@ -862,28 +976,30 @@ export default class PdfView extends Vue {
   }
 
   executeInitialSearch() {
-    if (this.firstLoad) {
-      this.firstLoad = false;
+    if (!this.firstLoad)
+      return;
 
-      let firstQuery = this.searchParams.words.replaceAll("AND", "OR").replaceAll(/\"|\'/g, "") ?? "";
-      firstQuery += this.searchParams.place?.names ? " OR " + Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" OR ") : "";
+    this.firstLoad = false;
 
-      this.wordsToHighlight = firstQuery.trim();
-
-      this.searchForHighlights();
+    let firstQuery = this.searchParams.words.replaceAll(/\s+OR\s+/g, " ") ?? "";
+    if (this.searchParams.place?.names) {
+      firstQuery += Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" ");
     }
+    this.query = firstQuery.trim();
+
+    this.searchForHighlights();
   }
 
   previousHighlightClick() {
-    if (!this.matchChangeButtonDisabled()) this.previousHighlight(this.show === 'pdf');
+    this.previousHighlight(this.show === 'pdf');
   }
 
   nextHighlightClick() {
-    if (!this.matchChangeButtonDisabled()) this.nextHighlight(this.show === 'pdf');
+    this.nextHighlight(this.show === 'pdf');
   }
 
   getTranscriptHighlights() {
-    if (this.wordsToHighlight.length <= 2) {
+    if (this.query.length <= 2 && this.speaker === undefined) {
       return ""
     } else if (this.transcriptTotal == 0) {
       return "Ni zadetkov"
@@ -901,14 +1017,8 @@ export default class PdfView extends Vue {
   }
 
   windowAllowsPdfDisplay() {
-    return true
+    return this.windowWidth > 1350;
   }
-
-  /*
-  transparentBackground() {
-    return this.scrollHeight / window.innerHeight > 0.2;
-  }
-  */
 
   toggleTooltip() {
     this.showTooltip = !this.showTooltip;
