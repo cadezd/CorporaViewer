@@ -817,25 +817,28 @@ export default class PdfView extends Vue {
   }
    */
 
-  searchForHighlights() {
+  async searchForHighlights() {
     this.handleLoading();
 
-    if (this.windowAllowsPdfDisplay()) this.findMatches();
-    else this.transcriptHighlights.findMatches();
+    if (this.windowAllowsPdfDisplay()) {
+      await this.findMatches();
+    } else {
+      await this.transcriptHighlights.findMatches();
+    }
 
-    setTimeout(() => {
-      this.handleLoaded();
-    }, 1000);
   }
 
-  clear() {
+  async clear() {
     this.looseSearch = false;
     this.query = '';
     this.updateSpeaker(undefined);
 
     this.resetPagination();
-    if (this.windowAllowsPdfDisplay()) this.findMatches();
-    else this.transcriptHighlights.findMatches();
+    if (this.windowAllowsPdfDisplay()) {
+      await this.findMatches();
+    } else {
+      await this.transcriptHighlights.findMatches();
+    }
   }
 
   @Watch('transcriptLanguage') onTranscriptLanguageChanged() {
@@ -857,6 +860,12 @@ export default class PdfView extends Vue {
         this.documentPagination.syncPdfToTranscriptScroll();
       } else if (this.transcriptHighlights.total === 0) {
         this.findMatches();
+      } else {
+        // Finds current highlight in the pdf and scrolls to it
+        const currentIndex = Math.min(Math.max(this.transcriptHighlights.index, 0), this.pdfHighlights.highlights.length - 1);
+        console.log("PDF", currentIndex);
+        this.pdfHighlights.updateIndexChanges(currentIndex);
+        this.pdfHighlights.scrollToHighlight();
       }
     }
 
@@ -975,7 +984,7 @@ export default class PdfView extends Vue {
     }
   }
 
-  executeInitialSearch() {
+  async executeInitialSearch() {
     if (!this.firstLoad)
       return;
 
@@ -987,7 +996,7 @@ export default class PdfView extends Vue {
     }
     this.query = firstQuery.trim();
 
-    this.searchForHighlights();
+    await this.searchForHighlights();
   }
 
   previousHighlightClick() {

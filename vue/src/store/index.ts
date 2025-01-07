@@ -21,9 +21,9 @@ export default createStore({
     state: {} as RootState,
     getters: {},
     mutations: {
-        findMatches(state: RootState) {
-            this.commit("transcriptHighlightsModule/findMatches");
-            this.commit("pdfHighlightsModule/findMatches");
+        async findMatches(state: RootState) {
+            await this.commit("transcriptHighlightsModule/findMatches");
+            await this.commit("pdfHighlightsModule/findMatches");
         },
         previousHighlight(state: RootState, pdf: boolean) {
             if (!pdf) this.commit("transcriptHighlightsModule/previousHighlight");
@@ -57,5 +57,11 @@ export default createStore({
             this.concat("transcriptHighlightsModule/clearMatches");
         }
     },
-    actions: {}
+    actions: {
+        async fetchHighlights(context) {
+            // fetch highlights (async)
+            // give highlights to pdfHighlightsModule
+            // give highlights to transcriptHighlightsModule
+        }
+    }
 })
