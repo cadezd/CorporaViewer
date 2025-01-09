@@ -1,10 +1,9 @@
 import {reactive} from "vue";
-import {Attendee} from "./Attendee";
 
 export interface MeetingSearchParamsInterface {
     meetingId?: string;
-    words?: string;
-    speaker?: Attendee;
+    query?: string;
+    speaker?: string;
     lang?: string;
     looseSearch?: boolean;
 }
@@ -15,15 +14,15 @@ export class MeetingSearchParams implements MeetingSearchParamsInterface {
         return reactive(new MeetingSearchParams()) as MeetingSearchParams;
     }
 
-    meetingId: string = "";
-    words: string = "";
-    speaker?: Attendee;
+    meetingId?: string = "";
+    query?: string = "";
+    speaker?: string;
     lang?: string;
     looseSearch?: boolean = false;
 
     reset(): void {
-        this.meetingId = "";
-        this.words = "";
+        this.meetingId = undefined;
+        this.query = undefined;
         this.speaker = undefined;
         this.lang = undefined;
         this.looseSearch = false;

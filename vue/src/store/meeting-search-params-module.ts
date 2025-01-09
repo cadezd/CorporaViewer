@@ -9,19 +9,19 @@ interface MeetingSearchParamsState {
 
 const mutations: MutationTree<MeetingSearchParamsState> = {
     // Meeting search params
-    resetSearchParams(state: MeetingSearchParamsState) {
+    resetMeetingSearchParams(state: MeetingSearchParamsState) {
         state.instance.reset()
     },
     updateMeetingId(state: MeetingSearchParamsState, meetingId: string) {
         state.instance.meetingId = meetingId
     },
-    updateSearchWords(state: MeetingSearchParamsState, words: string) {
-        state.instance.words = words
+    updateSearchQuery(state: MeetingSearchParamsState, query: string) {
+        state.instance.query = query
     },
-    updateSearchSpeaker(state: MeetingSearchParamsState, speaker: Attendee | undefined) {
+    updateSpeaker(state: MeetingSearchParamsState, speaker: string) {
         state.instance.speaker = speaker
     },
-    updateLang(state: MeetingSearchParamsState, lang: string) {
+    updateLanguage(state: MeetingSearchParamsState, lang: string) {
         state.instance.lang = lang
     },
     updateLooseSearch(state: MeetingSearchParamsState, looseSearch: boolean) {
@@ -35,7 +35,7 @@ const meetingSearchParamsModule: Module<MeetingSearchParamsState, RootState> = {
         instance: MeetingSearchParams.create()
     },
     getters: {
-        searchParamsInstance: (state) => state.instance
+        meetingSearchParamsInstance: (state) => state.instance
     },
     mutations
 };

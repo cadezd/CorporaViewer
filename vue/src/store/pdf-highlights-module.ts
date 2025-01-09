@@ -3,32 +3,30 @@ import {RootState} from "@/store/index";
 import {PdfHighlights} from "@/types/Highlights";
 import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
 import {AnnotationFactory} from "annotpdf";
+import {Rect} from "@/types/Rect";
 
 interface PdfHighlightsState {
     instance: PdfHighlights;
 }
 
 const mutations: MutationTree<PdfHighlightsState> = {
+    /*
     async findMatches(state: PdfHighlightsState) {
         await state.instance.findMatches();
+    },
+     */
+    async displayHighlights(state: PdfHighlightsState, highlightsRects: Rect[][]) {
+        await state.instance.displayHighlights(highlightsRects);
+    },
+    async clearMatches(state: PdfHighlightsState) {
+        await state.instance.clearMatches();
+        await state.instance.displayHighlights([]);
     },
     previousHighlight(state: PdfHighlightsState) {
         state.instance.previousHighlight();
     },
     nextHighlight(state: PdfHighlightsState) {
         state.instance.nextHighlight();
-    },
-    updateQuery(state: PdfHighlightsState, query: string) {
-        state.instance.query = query;
-    },
-    updateMeetingId(state: PdfHighlightsState, meetingId: string | undefined) {
-        state.instance.meetingId = meetingId;
-    },
-    updateLanguage(state: PdfHighlightsState, language: string | undefined) {
-        state.instance.language = language;
-    },
-    updateSpeaker(state: PdfHighlightsState, speaker: string | undefined) {
-        state.instance.speaker = speaker;
     },
     updateLooseSearch(state: PdfHighlightsState, looseSearch: boolean) {
         state.instance.looseSearch = looseSearch;

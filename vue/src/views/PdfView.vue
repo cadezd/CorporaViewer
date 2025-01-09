@@ -111,7 +111,7 @@
                 :class="{ 'blur': loading, 'scrollable': show === 'pdf' }"
                 v-bind:meeting_id="meeting_id" @loaded="handleLoaded"
                 @loading="handleLoading"
-                @executeInitialSearch="executeInitialSearch" match-loading></PdfDisplay>
+                @executeInitialSearch="searchForHighlights" match-loading></PdfDisplay>
     <!-- Display of transcript -->
     <Transcript v-if="show === 'transcript'"
                 :class="{ 'blur': loading, 'scrollable': show === 'transcript' }"
@@ -190,7 +190,7 @@
             </div>
             <div class="col-md-3 search-bar-button-container row">
               <!-- Search button -->
-              <button class="col-md-5 btn btn-default" type="button" @click="searchForHighlights">
+              <button class="col-md-5 btn btn-default" type="button" @click="searchForHighlights" :disabled="loading">
                 <i class="fa fa-search"></i>
               </button>
               <!-- Clear button-->
@@ -683,6 +683,8 @@ import axios from 'axios';
 import {SearchParams} from '@/types/SearchParams';
 import {PdfHighlights, TranscriptHighlights} from '@/types/Highlights';
 import {Pagination} from '@/types/Pagination';
+import {MeetingSearchParams} from "@/types/MeetingSearchParams";
+import store from "@/store";
 
 @Options({
   props: {
@@ -698,13 +700,15 @@ import {Pagination} from '@/types/Pagination';
   },
   computed: {
     ...mapGetters('searchParamsModule', ['searchParamsInstance']),
+    ...mapGetters('meetingSearchParamsModule', ['meetingSearchParamsInstance']),
     ...mapGetters('transcriptHighlightsModule', ['transcriptHighlightsInstance']),
     ...mapGetters('pdfHighlightsModule', ['pdfHighlightsInstance']),
     ...mapGetters('documentPaginationModule', ['documentPaginationInstance']),
   },
   methods: {
-    ...mapMutations(['findMatches', 'nextHighlight', 'previousHighlight', 'updateQuery', 'updateMeetingId', 'updateLanguage', 'updateSpeaker', 'updateLooseSearch', 'reset']),
+    ...mapMutations(['clearMatches', 'nextHighlight', 'previousHighlight']),
     ...mapMutations('searchParamsModule', ['']),
+    ...mapMutations('meetingSearchParamsModule', ['resetMeetingSearchParams', 'updateMeetingId', 'updateSearchQuery', 'updateSpeaker', 'updateLanguage', 'updateLooseSearch']),
     ...mapMutations('transcriptHighlightsModule', ['updateOriginalTranscript', 'setUpdateTranscriptIndex', 'setUpdateTranscriptTotal',]),
     ...mapMutations('pdfHighlightsModule', ['updatePdfAnnotationFactory']),
     ...mapMutations('documentPaginationModule', ['setPage', 'updatePageInputFunctions', 'resetPagination'])
@@ -716,6 +720,10 @@ export default class PdfView extends Vue {
 
   get searchParams(): SearchParams {
     return this.searchParamsInstance;
+  }
+
+  get meetingSearchParams(): MeetingSearchParams {
+    return this.meetingSearchParamsInstance;
   }
 
   get transcriptHighlights(): TranscriptHighlights {
@@ -733,7 +741,7 @@ export default class PdfView extends Vue {
   meeting_id?: string;
   transcriptLanguage: string = '';
   speakerList: string[] = [];
-  firstLoad: boolean = false;
+  firstLoad: boolean = true;
 
   show: string = ''
   loading: boolean = false;
@@ -759,13 +767,12 @@ export default class PdfView extends Vue {
     window.addEventListener('resize', this.onResize);
     window.addEventListener('scroll', this.onScroll);
 
-    this.firstLoad = true;
-
     this.initStoreParams();
-
     await this.initSpeakerList();
     await this.getPDF();
     this.getTranscript();
+
+    this.firstLoad = false;
   }
 
   unmounted(): void {
@@ -819,13 +826,8 @@ export default class PdfView extends Vue {
 
   async searchForHighlights() {
     this.handleLoading();
-
-    if (this.windowAllowsPdfDisplay()) {
-      await this.findMatches();
-    } else {
-      await this.transcriptHighlights.findMatches();
-    }
-
+    await store.dispatch('fetchHighlights', this.windowAllowsPdfDisplay());
+    this.handleLoaded();
   }
 
   async clear() {
@@ -833,12 +835,9 @@ export default class PdfView extends Vue {
     this.query = '';
     this.updateSpeaker(undefined);
 
+    store.dispatch('cancelFetchHighlights');
     this.resetPagination();
-    if (this.windowAllowsPdfDisplay()) {
-      await this.findMatches();
-    } else {
-      await this.transcriptHighlights.findMatches();
-    }
+    this.clearMatches();
   }
 
   @Watch('transcriptLanguage') onTranscriptLanguageChanged() {
@@ -847,7 +846,7 @@ export default class PdfView extends Vue {
   }
 
   @Watch('query') onQueryChanged() {
-    this.updateQuery(this.query);
+    this.updateSearchQuery(this.query);
   }
 
   @Watch('looseSearch') onLooseSearchChanged() {
@@ -856,14 +855,14 @@ export default class PdfView extends Vue {
 
   @Watch('show') onShowChanged() {
     if (this.show === 'pdf') {
+      this.transcriptLanguage = ''; // Sets the language to original when switching to pdf
       if (this.pdfHighlights.total === 0) {
         this.documentPagination.syncPdfToTranscriptScroll();
       } else if (this.transcriptHighlights.total === 0) {
-        this.findMatches();
+        this.searchForHighlights();
       } else {
         // Finds current highlight in the pdf and scrolls to it
         const currentIndex = Math.min(Math.max(this.transcriptHighlights.index, 0), this.pdfHighlights.highlights.length - 1);
-        console.log("PDF", currentIndex);
         this.pdfHighlights.updateIndexChanges(currentIndex);
         this.pdfHighlights.scrollToHighlight();
       }
@@ -892,7 +891,7 @@ export default class PdfView extends Vue {
     }).then((response) => {
       this.updateOriginalTranscript({
         text: response.data.text,
-        callback: !this.windowAllowsPdfDisplay() ? this.executeInitialSearch : () => {
+        callback: !this.windowAllowsPdfDisplay() || !this.firstLoad ? this.searchForHighlights : () => {
         }
       });
     }).catch((error) => {
@@ -914,8 +913,9 @@ export default class PdfView extends Vue {
     }
   }
 
+
   getSelectedSpeaker(): string | undefined {
-    return this.transcriptHighlights.speaker;
+    return this.meetingSearchParams.speaker;
   }
 
 
@@ -924,18 +924,23 @@ export default class PdfView extends Vue {
       getPageInput: this.getPageInput,
       setPageInput: this.setPageInput
     });
-    this.updateMeetingId(this.meeting_id)
+
+    this.updateMeetingId(this.meeting_id);
+    let firstQuery = this.searchParams.words.replaceAll(/\s+OR\s+/g, " ") ?? "";
+    if (this.searchParams.place?.names) {
+      firstQuery += Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" ");
+    }
+    this.query = firstQuery.trim();
+    this.updateSearchQuery(this.query);
+    // undefined language -> original language
+    this.updateLanguage(undefined);
 
     this.setUpdateTranscriptIndex(this.updateTranscriptIndex);
     this.setUpdateTranscriptTotal(this.updateTranscriptTotal);
   }
 
   resetStoreParams(): void {
-    this.updateQuery('');
-    this.updateMeetingId(undefined);
-    this.updateLanguage(undefined);
-    this.updateSpeaker(undefined);
-    this.updateLooseSearch(false);
+    this.resetMeetingSearchParams();
     this.updatePdfAnnotationFactory(undefined);
     this.updateOriginalTranscript({
       text: '',
@@ -968,7 +973,8 @@ export default class PdfView extends Vue {
     const response = await fetch(`${process.env.VUE_APP_API_URL}/meetings/${this.meeting_id}/getSpeakers`);
     const data = await response.json();
     this.speakerList = data.speakers;
-    // If speaker is selected, find the most similar speaker from the list set it as selected
+
+    // If a speaker is selected, find the most similar speaker from the list set it as selected
     if (this.searchParams.speaker) {
       let selectedSpeakerLastName = this.searchParams.speaker.names[0].split(" ").pop();
       let speakersLastNameList = this.speakerList
@@ -984,20 +990,6 @@ export default class PdfView extends Vue {
     }
   }
 
-  async executeInitialSearch() {
-    if (!this.firstLoad)
-      return;
-
-    this.firstLoad = false;
-
-    let firstQuery = this.searchParams.words.replaceAll(/\s+OR\s+/g, " ") ?? "";
-    if (this.searchParams.place?.names) {
-      firstQuery += Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" ");
-    }
-    this.query = firstQuery.trim();
-
-    await this.searchForHighlights();
-  }
 
   previousHighlightClick() {
     this.previousHighlight(this.show === 'pdf');
@@ -1008,7 +1000,7 @@ export default class PdfView extends Vue {
   }
 
   getTranscriptHighlights() {
-    if (this.query.length <= 2 && this.speaker === undefined) {
+    if (this.transcriptIndex == -1) {
       return ""
     } else if (this.transcriptTotal == 0) {
       return "Ni zadetkov"
