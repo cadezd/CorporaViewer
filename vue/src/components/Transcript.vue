@@ -1,5 +1,6 @@
 <template>
   <div class="transcript-container" ref="transcriptContainer">
+    <h5>{{ $t('transcriptWillBeDisplayedHere') }}</h5>
   </div>
 </template>
 
