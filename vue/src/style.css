@@ -53,6 +53,7 @@ html {
   flex-wrap: wrap;
   width: 100%;
   justify-content: space-evenly;
+
 }
 
 nav {
@@ -128,7 +129,6 @@ nav a.router-link-exact-active, .navigation a.router-link-exact-active {
 }
 
 .page-container {
-  padding: 20px;
   background-color: #708d81;
 }
 

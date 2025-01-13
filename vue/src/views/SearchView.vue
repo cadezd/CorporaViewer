@@ -1,5 +1,5 @@
 <template>
-    <div class="page-container">
+    <div class="page-container p-sm-3">
         <div class="search-bar-container">
             <SearchBar @newsearch="executeInitialSearch"></SearchBar>
         </div>

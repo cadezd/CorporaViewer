@@ -14,6 +14,7 @@ import {Ref, Watch} from 'vue-property-decorator';
 import {mapGetters, mapMutations} from 'vuex';
 import {PdfHighlights, TranscriptHighlights} from '@/types/Highlights';
 import {Pagination} from '@/types/Pagination';
+import {AnnotationFactory} from "annotpdf";
 
 
 @Options({
@@ -21,11 +22,7 @@ import {Pagination} from '@/types/Pagination';
     meeting_id: {
       type: String,
       required: true
-    },
-    matchLoading: {
-      type: Boolean,
-      required: true
-    },
+    }
   },
   computed: {
     ...mapGetters('transcriptHighlightsModule', ['transcriptHighlightsInstance']),
@@ -45,7 +42,7 @@ import {Pagination} from '@/types/Pagination';
       'updatePdfViewer',
       'updatePdfJsLib',
       'updateOriginalPdfData',
-      //'updateScrollPdfToPercent'
+      'updatePdfAnnotationFactory'
     ]),
     ...mapMutations('documentPaginationModule', [
       'updatePageFunctions',
@@ -54,7 +51,7 @@ import {Pagination} from '@/types/Pagination';
       'updateScrollPdfToPercent'
     ])
   },
-  emits: ['loaded', 'matchLoaded', 'loadingNewMatch', 'loading', 'executeInitialSearch']
+  emits: ['loaded', 'loading', 'executeInitialSearch']
 
 })
 
@@ -76,27 +73,18 @@ export default class PdfView extends Vue {
   @Ref('pdfContainer') pdfContainer!: HTMLDivElement;
 
   meeting_id?: string;
-  firstLoading: boolean = true;
+  firstLoading = true;
 
   eventBus?: pdfjsViewer.EventBus;
   pdfLinkService?: pdfjsViewer.PDFLinkService;
   pdfViewer?: pdfjsViewer.PDFViewer;
   pdfSource?: string;
   previousWindowWidth = 1;
-  scrollingToTranscriptScrollPosition = false;
 
   pageDimensions: { width: number, height: number } = {width: 0, height: 0};
   topScrollOffset: number = 0;
   currentPage: number = 1;
 
-
-  @Watch('matchLoading') onMatchLoadingChange() {
-    if (!this.scrollingToTranscriptScrollPosition && !this.matchLoading && this.previousWindowWidth != window.outerWidth) {
-      this.previousWindowWidth = window.outerWidth;
-      this.calculatePageDimensions();
-      if (this.pdfHighlights.total > 0) this.pdfHighlights.refreshHighlights();
-    }
-  }
 
   @Watch('currentPage') onPageChange() {
     this.syncPageInput(this.updateMatchesCount);
@@ -174,6 +162,19 @@ export default class PdfView extends Vue {
       this.$emit('loaded');
     });
 
+    // Get the PDF data from the server or cache
+    let src = this.pdfHighlights.pdfAnnotationFactory === undefined ?
+        {url: this.pdfSource!} : {data: this.pdfHighlights.pdfAnnotationFactory.write().slice(0)};
+    pdfjs.getDocument(src).promise.then((pdf: any) => {
+      // Display the PDF
+      this.pdfViewer!.setDocument(pdf);
+      // Cache the original PDF data for highlighting
+      if (this.pdfHighlights.pdfAnnotationFactory === undefined) {
+        pdf.getData().then((data: any) => {
+          this.updatePdfAnnotationFactory(new AnnotationFactory(data));
+        });
+      }
+    });
 
     this.initHighlightsParams();
   }
@@ -217,7 +218,6 @@ export default class PdfView extends Vue {
     this.updatePdfJsLib(pdfjs);
     this.updateEventBus(this.eventBus);
     this.updatePdfViewer(this.pdfViewer);
-    this.pdfHighlights.displayPdf(false);
   }
 }
 </script>

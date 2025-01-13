@@ -73,11 +73,11 @@
               <input
                   type="checkbox"
                   id="looseSearch"
-                  class="col-1 d-flex align-content-start form-check-input checkbox"
+                  class="col-2 d-flex align-content-start form-check-input checkbox"
                   placeholder="Loose search"
                   v-model="looseSearch"
               />
-              <label for="looseSearch" class="col-11 d-flex align-content-start">{{ $t('looseSearch') }}</label>
+              <label for="looseSearch" class="col-10 d-flex align-content-start">{{ $t('looseSearch') }}</label>
             </div>
 
             <div class="content-search-buttons">
@@ -92,7 +92,7 @@
             </div>
             <div class="highlight-text-info" v-if="show === 'pdf'">
               {{
-                pdfHighlightsInstance.displayedHighlights()
+                pdfHighlightsInstance.displayedHighlights(this.query)
               }}
             </div>
             <div class="highlight-text-info" v-if="show === 'transcript'">
@@ -107,17 +107,16 @@
     </div>
 
     <!-- Display of original document -->
-    <PdfDisplay v-if="pdfHighlights.pdfAnnotationFactory && windowAllowsPdfDisplay()"
+    <PdfDisplay v-if="windowAllowsPdfDisplay()"
                 :class="{ 'blur': loading, 'scrollable': show === 'pdf' }"
-                v-bind:meeting_id="meeting_id" @loaded="handleLoaded"
-                @loading="handleLoading"
-                @executeInitialSearch="searchForHighlights" match-loading></PdfDisplay>
+                v-bind:meeting_id="meeting_id" @loaded="handleLoaded" @loading="handleLoading"
+                @executeInitialSearch="searchForHighlights"></PdfDisplay>
     <!-- Display of transcript -->
     <Transcript v-if="show === 'transcript'"
                 :class="{ 'blur': loading, 'scrollable': show === 'transcript' }"
                 @loaded="handleLoaded" @loading="handleLoading">
     </Transcript>
-    <!-- Display of loading whell -->
+    <!-- Display of loading wheel -->
     <div class="loading-container" v-if="loading">
       <div class="spinner-border" role="status">
         <span class="sr-only">{{ $t('loading') }}</span>
@@ -223,7 +222,7 @@
           </div>
           <div class="highlight-text-info" v-if="show === 'pdf'">
             {{
-              pdfHighlightsInstance.displayedHighlights()
+              pdfHighlightsInstance.displayedHighlights(this.query)
             }}
           </div>
           <div class="highlight-text-info" v-if="show === 'transcript'">
@@ -674,7 +673,6 @@ import PdfDisplay from '@/components/PdfDisplay.vue';
 import Transcript from '@/components/Transcript.vue';
 import 'pdfjs-dist/build/pdf.worker.entry';
 import 'pdfjs-dist/web/pdf_viewer.css';
-import {AnnotationFactory} from 'annotpdf';
 import {Options, Vue} from 'vue-class-component';
 import {Watch} from 'vue-property-decorator';
 import {closest} from "fastest-levenshtein";
@@ -706,7 +704,7 @@ import store from "@/store";
     ...mapGetters('documentPaginationModule', ['documentPaginationInstance']),
   },
   methods: {
-    ...mapMutations(['clearMatches', 'nextHighlight', 'previousHighlight']),
+    ...mapMutations(['clearMatches', 'nextHighlight', 'previousHighlight', 'reset']),
     ...mapMutations('searchParamsModule', ['']),
     ...mapMutations('meetingSearchParamsModule', ['resetMeetingSearchParams', 'updateMeetingId', 'updateSearchQuery', 'updateSpeaker', 'updateLanguage', 'updateLooseSearch']),
     ...mapMutations('transcriptHighlightsModule', ['updateOriginalTranscript', 'setUpdateTranscriptIndex', 'setUpdateTranscriptTotal',]),
@@ -741,7 +739,7 @@ export default class PdfView extends Vue {
   meeting_id?: string;
   transcriptLanguage: string = '';
   speakerList: string[] = [];
-  firstLoad: boolean = true;
+
 
   show: string = ''
   loading: boolean = false;
@@ -752,7 +750,6 @@ export default class PdfView extends Vue {
 
   pageInput: number = 1;
   windowWidth: number = window.innerWidth;
-  scrollHeight: number = 0;
 
   transcriptIndex: number = 0;
   transcriptTotal: number = 0;
@@ -765,19 +762,14 @@ export default class PdfView extends Vue {
     this.show = this.windowAllowsPdfDisplay() ? 'pdf' : 'transcript';
 
     window.addEventListener('resize', this.onResize);
-    window.addEventListener('scroll', this.onScroll);
 
     this.initStoreParams();
     await this.initSpeakerList();
-    await this.getPDF();
     this.getTranscript();
-
-    this.firstLoad = false;
   }
 
   unmounted(): void {
     window.removeEventListener('resize', this.onResize);
-    window.removeEventListener('scroll', this.onScroll);
 
     this.resetStoreParams();
   }
@@ -791,7 +783,6 @@ export default class PdfView extends Vue {
         choosePdfOption.disabled = true;
       }
       this.show = 'transcript';
-      this.handleLoaded();
     } else {
       const choosePdfOption = document.getElementById('choosePdfOption') as HTMLOptionElement;
       if (choosePdfOption !== null) {
@@ -800,9 +791,6 @@ export default class PdfView extends Vue {
     }
   }
 
-  onScroll() {
-    this.scrollHeight = window.scrollY;
-  }
 
   handleLoading() {
     this.loading = true;
@@ -812,19 +800,11 @@ export default class PdfView extends Vue {
     this.loading = false;
   }
 
-
-  /*
-  //@Watch('query')
-  onqueryChange() {
-    if (this.query.length > 2 && this.windowAllowsPdfDisplay()) {
-      this.newMatchLoading();
-    }
-    if (this.windowAllowsPdfDisplay()) this.findMatches();
-    else this.transcriptHighlights.findMatches();
-  }
-   */
-
   async searchForHighlights() {
+    // If the search is already in progress, do not start another one
+    if (this.loading)
+      return;
+
     this.handleLoading();
     await store.dispatch('fetchHighlights', this.windowAllowsPdfDisplay());
     this.handleLoaded();
@@ -835,14 +815,13 @@ export default class PdfView extends Vue {
     this.query = '';
     this.updateSpeaker(undefined);
 
-    store.dispatch('cancelFetchHighlights');
     this.resetPagination();
     this.clearMatches();
   }
 
   @Watch('transcriptLanguage') onTranscriptLanguageChanged() {
-    this.getTranscript();
     this.updateLanguage(this.transcriptLanguage ? this.transcriptLanguage : undefined);
+    this.getTranscript();
   }
 
   @Watch('query') onQueryChanged() {
@@ -871,16 +850,6 @@ export default class PdfView extends Vue {
     // switching to transcript logic is implemented in transcript container
   }
 
-  async getPDF() {
-    try {
-      const response = await fetch(process.env.VUE_APP_API_URL + '/pdf/getById/' + this.meeting_id);
-      const arrayBuffer = await response.arrayBuffer();
-      this.updatePdfAnnotationFactory(new AnnotationFactory(new Uint8Array(arrayBuffer)));
-    } catch (error) {
-      console.log(error)
-    }
-  }
-
   getTranscript() {
     // get meeting as text with meeting_id and transcriptLanguage
     axios.get(process.env.VUE_APP_API_URL + `/meetings/${this.meeting_id}/getMeetingAsText`, {
@@ -891,8 +860,7 @@ export default class PdfView extends Vue {
     }).then((response) => {
       this.updateOriginalTranscript({
         text: response.data.text,
-        callback: !this.windowAllowsPdfDisplay() || !this.firstLoad ? this.searchForHighlights : () => {
-        }
+        callback: this.searchForHighlights
       });
     }).catch((error) => {
       console.log(error)
@@ -948,7 +916,7 @@ export default class PdfView extends Vue {
       }
     });
 
-    this.pdfHighlights.highlights = [];
+    this.reset();
     this.documentPagination.reset();
   }
 
@@ -958,6 +926,7 @@ export default class PdfView extends Vue {
   }
 
   handleSpeakerChanged(speaker: string) {
+    this.speaker = speaker;
     this.updateSpeaker(speaker);
   }
 
@@ -1000,10 +969,8 @@ export default class PdfView extends Vue {
   }
 
   getTranscriptHighlights() {
-    if (this.transcriptIndex == -1) {
-      return ""
-    } else if (this.transcriptTotal == 0) {
-      return "Ni zadetkov"
+    if (this.transcriptTotal == 0) {
+      return "";
     } else {
       return `Zadetek ${this.transcriptIndex + 1} / ${this.transcriptTotal}`;
     }
