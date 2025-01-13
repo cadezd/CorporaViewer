@@ -13,7 +13,6 @@ export abstract class HighlightsAbstract {
 
 
     // functions
-    /*abstract findMatches: () => void;*/
     abstract clearMatches: () => void;
     abstract scrollToHighlight: (...params: any) => void;
     abstract nextHighlight: () => void;
@@ -108,66 +107,6 @@ export class TranscriptHighlights extends TranscriptHighlightsAbstract {
         }
     }
 
-    /*
-    // this function is called whenever search string changes or original transcript changes, so transcript is never just an empty string
-    findMatches = async () => {
-
-        await this.clearMatches();
-
-        let transcriptContent = new DOMParser().parseFromString(this.transcript, 'text/html');
-
-
-
-        if (this.query!.length <= 2 && !this.speaker)
-            return;
-
-
-        let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.query}`;
-        if (this.language)
-            URL += `&lang=${this.language}`;
-        if (this.speaker)
-            URL += `&speaker=${this.speaker}`;
-        if (this.looseSearch)
-            URL += `&looseSearch=true`;
-
-        for await (const parsedChunk of super.streamingFetch(() => fetch(URL))) {
-            const highlights: Highlight[] = parsedChunk.highlights;
-            for (const highlight of highlights) {
-
-                const firstId = highlight.ids[0];
-                const firstChild = transcriptContent.getElementById(firstId);
-                if (!firstChild) {
-                    continue;
-                }
-                const newParent = transcriptContent.createElement('span');
-                newParent.classList.add('transcript-highlight');
-                firstChild.parentNode?.insertBefore(newParent, firstChild);
-
-                highlight.ids.forEach((id: string) => {
-                    const element = transcriptContent.getElementById(id);
-                    if (element) {
-                        const prevTextNode = element.previousSibling;
-                        if (prevTextNode && prevTextNode.nodeType === Node.TEXT_NODE) {
-                            newParent.appendChild(prevTextNode);
-                        }
-                        newParent.appendChild(element);
-                    }
-                });
-            }
-        }
-
-
-
-        this.transcript = transcriptContent.body.innerHTML;
-        if (this.container) {
-            this.container.innerHTML = this.transcript;
-            this._saveHighlights(true);
-        }
-    }
-
-         */
-
-
     private _saveHighlights = (shouldScrollToHighlight: boolean) => {
         this.highlights = this.container?.querySelectorAll(`.transcript-highlight`);
         if (this.highlights && this.highlights?.length > 0) {
@@ -215,7 +154,7 @@ export class TranscriptHighlights extends TranscriptHighlightsAbstract {
     };
 
     applyTranscript: () => void = () => {
-        if (this.container) {
+        if (this.container && this.transcript) {
             this.container.innerHTML = this.transcript;
             this._saveHighlights(false);
         } else {
@@ -238,21 +177,6 @@ export class PdfHighlight {
         this.centerY = rects[0].coordinates[0].y0
     }
 }
-
-/*
-export class PdfHighlight {
-    id: string;
-    rects: Rect[];
-    centerY: number;
-
-    constructor(id: string, rects: Rect[]) {
-        this.id = id;
-        this.rects = rects;
-        this.centerY = rects[0].coordinates[0].y0
-    }
-}
-
- */
 
 export abstract class PdfHighlightsAbstract extends HighlightsAbstract {
     // variables
@@ -344,67 +268,6 @@ export class PdfHighlights extends PdfHighlightsAbstract {
         }
     }
 
-    /*
-    findMatches = async () => {
-        await this.clearMatches();
-
-
-        if (this.query!.length > 2 || this.speaker !== undefined) {
-            let URL = process.env.VUE_APP_API_URL + `/meetings/${this.meetingId}/getHighlights?words=${this.query}`;
-            if (this.speaker)
-                URL += `&speaker=${this.speaker}`;
-            if (this.looseSearch)
-                URL += `&looseSearch=true`;
-
-            for await (const parsedChunk of super.streamingFetch(() => fetch(URL))) {
-                const highlights: Highlight[] = parsedChunk.highlights;
-                for (const highlight of highlights) {
-                    const rects = highlight.rects;
-                    if (!rects || rects.length == 0 || !rects[0].coordinates) continue;
-                    // invert the y coordinates in the highlight rectangles
-                    for (const rect of highlight.rects) {
-                        let page = rect.page;
-                        let height = this.pdfViewer?._pages![page].viewport.viewBox[3];
-                        rect.coordinates.forEach(coordinate => {
-                            coordinate.y0 = height - coordinate.y0;
-                            coordinate.y1 = height - coordinate.y1;
-                        });
-                    }
-                    this.highlights.push(new PdfHighlight(highlight.ids[0], rects));
-                    for (const rect of rects) {
-                        // Add the highlight to the PDF
-                        let quadPoints = rect.coordinates.map(coordinate => {
-                            return [
-                                coordinate.x0, coordinate.y0,
-                                coordinate.x1, coordinate.y0,
-                                coordinate.x0, coordinate.y1,
-                                coordinate.x1, coordinate.y1
-                            ];
-                        });
-                        this.pdfAnnotationFactory?.createHighlightAnnotation(
-                            {
-                                page: rect.page,
-                                quadPoints: quadPoints.flat(),
-                                opacity: 0.5,
-                                color: {r: 255, g: 255, b: 0},
-                            },
-                        );
-                    }
-                }
-            }
-
-            // sort the highlights by their id
-            this.highlights.sort((a: PdfHighlight, b: PdfHighlight) => {
-                return a.id.localeCompare(b.id, undefined, {numeric: true});
-            });
-        }
-
-
-        if (this.pdfAnnotationFactory) {
-            this.displayPdf(true);
-        }
-    }
-    */
 
     displayPdf = (shouldScrollToHighlight: boolean) => {
         this.eventBus!.on("pagesinit", () => {
@@ -500,10 +363,8 @@ export class PdfHighlights extends PdfHighlightsAbstract {
     }
 
     displayedHighlights = () => {
-        if (this.index == -1) {
-            return ""
-        } else if (this.total == 0) {
-            return "Ni zadetkov"
+        if (this.total == 0) {
+            return "";
         } else {
             return `Zadetek ${this.index + 1} / ${this.total}`;
         }
