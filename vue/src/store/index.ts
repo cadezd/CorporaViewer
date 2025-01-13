@@ -44,7 +44,8 @@ export default createStore({
             else this.commit("pdfHighlightsModule/nextHighlight");
         },
         reset(state: RootState) {
-            this.concat("transcriptHighlightsModule/clearMatches");
+            this.commit("pdfHighlightsModule/clearMatches");
+            this.commit("transcriptHighlightsModule/clearMatches");
         }
     },
     actions: {
@@ -54,12 +55,7 @@ export default createStore({
             // Generate the URL based on the search parameters (given by the user)
             let meetingSearchParamsInstance = context.getters['meetingSearchParamsModule/meetingSearchParamsInstance'];
 
-            // If the query is empty and the speaker is not selected, do not fetch highlights
-            if ((!meetingSearchParamsInstance.query || meetingSearchParamsInstance.query.length < 2) && !meetingSearchParamsInstance.speaker)
-                return;
-
             let URL = process.env.VUE_APP_API_URL + `/meetings/${meetingSearchParamsInstance.meetingId}/getHighlights?words=${meetingSearchParamsInstance.query}`;
-
             if (meetingSearchParamsInstance.lang)
                 URL += `&lang=${meetingSearchParamsInstance.lang}`;
             if (meetingSearchParamsInstance.speaker)
