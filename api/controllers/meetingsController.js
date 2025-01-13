@@ -414,9 +414,6 @@ const getHighlights = async (req, res) => {
     words = tokens.filter(token => token.length === 1).map(token => token.join(" ").toLowerCase());
     phrases = tokens.filter(token => token.length > 1);
 
-    console.log(tokens);
-
-
     // Point in time id for words and sentences index
     let wordsIndexPITId = undefined;
     let sentenceIndexPITId = undefined;
@@ -566,28 +563,37 @@ const getSpeakers = async (req, res) => {
 
         let uniqueSpeakers = response.aggregations.unique_speakers.buckets
             .map(bucket => bucket.key.trim())
-            // remove empty speakers
+            // Remove empty speakers (noise)
             .filter(speaker => speaker)
+            // Remove speakers with only one word (noise) which is not capitalized
+            .filter(speaker => speaker.split(" ").length > 1 || speaker.split(" ")[0][0] === speaker.split(" ")[0][0].toUpperCase());
 
-            // filter out speakers that don't have capitalized first and last word and contain any digit and dont contain "Poslanec" and "Abgeordneter" or contain only one of them
-            .filter((speaker) => {
-                let isFirstWordCapitalized = speaker[0] === speaker[0].toUpperCase();
-                let lastWord = speaker.split(" ").pop();
-                let isLastWordCapitalized = lastWord[0] === lastWord[0].toUpperCase();
-                let containsDigit = /\d/.test(speaker);
-
-                let containsPoslanec = speaker.includes("Poslanec");
-                let containsAbgeordneter = speaker.includes("Abgeordneter");
-
-                return isFirstWordCapitalized && isLastWordCapitalized && !containsDigit && ((!containsPoslanec && !containsAbgeordneter) || (!containsPoslanec && containsAbgeordneter) || (containsPoslanec && !containsAbgeordneter));
-            });
-
-        // remove duplicates
+        // Remove diuplicates
         uniqueSpeakers = [...new Set(uniqueSpeakers)];
 
+
+        // Order them by length of the speaker name (ascending)
+        uniqueSpeakers = uniqueSpeakers.sort((a, b) => a.length - b.length);
+
+        const seenLastNames = new Set(); // To track last names we've encountered
+        const filteredSpeakers = [];
+        for (const speaker of uniqueSpeakers) {
+            const words = speaker.split(" ");
+            const lastName = words[words.length - 1];
+
+            // If we haven't seen this last name before
+            // And current name doesn't contain any of the last names we've seen before, add it to the list
+            if (!seenLastNames.has(lastName) && !Array.from(seenLastNames).some(lastName => speaker.includes(lastName))) {
+                filteredSpeakers.push(speaker);
+                seenLastNames.add(lastName);
+            }
+        }
+
         res.json({
-            speakers: uniqueSpeakers
+            speakers: filteredSpeakers
         });
+
+
     } catch (error) {
         console.error(error);
         res.status(500).json({error: "Internal server error"});
