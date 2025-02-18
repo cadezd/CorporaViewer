@@ -376,8 +376,7 @@ const speakerSearchQueryBuilder = (meetingId, speaker) => {
                 {
                     match: {
                         speaker: {
-                            query: speaker,
-                            fuzziness: "2",
+                            query: speaker
                         }
                     }
                 }
@@ -409,7 +408,7 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
                 type: "best_fields",
                 fields: ["text", "lemma"],
                 minimum_should_match: 1,
-                fuzziness: (looseSearch) ? "AUTO:5,10" : "0"
+                fuzziness: (looseSearch) ? "AUTO:3,6" : "0"
             }
         }
     });
@@ -430,7 +429,6 @@ const wordsSearchQueryBuilder = (meetingId, words, speaker, lang, looseSearch) =
                     match: {
                         "speaker": {
                             query: speaker,
-                            fuzziness: "2",
                             operator: "and"
                         }
                     }
@@ -508,7 +506,7 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                                 fuzzy: {
                                     "translations.text": {
                                         value: word,
-                                        fuzziness: (looseSearch) ? "AUTO:5,10" : "0"
+                                        fuzziness: (looseSearch) ? "AUTO:3,6" : "0"
                                     }
                                 }
                             }
@@ -536,7 +534,6 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                     match: {
                         "speaker": {
                             query: speaker,
-                            fuzziness: "2",
                         }
                     }
                 }] : []),
@@ -545,6 +542,7 @@ const phrasesSearchQueryBuilder = (meetingId, phrases, speaker, lang, looseSearc
                         path: "translations",
                         query: {
                             bool: {
+                                ...(lang ? {filter: [{term: {"translations.lang": lang}}]} : {}),
                                 should: phrasesFilters,
                                 minimum_should_match: 1
                             }
