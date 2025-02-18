@@ -405,8 +405,8 @@ const getHighlights = async (req, res) => {
     }
 
     // Tokenize the query and separate it into words and phrases
-    let words = undefined;
-    let phrases = undefined;
+    let words;
+    let phrases;
     const tokens = utils.tokenizeQueryDocumentSearch(query)
         .map(tokens => tokens.map(token => ASCIIFolder.foldReplacing(token.toLowerCase())))
         .map(tokens => tokens.map(token => token.replaceAll(/[^a-zA-Z0-9]/g, '')))
@@ -465,20 +465,34 @@ const getHighlights = async (req, res) => {
             const phrasesHighlights = await searchStrategy.processPhrasesResponse(phrasesResponse, esClient, meetingId);
 
 
-            // Filter out words if they are part of a sentence that is already highlighted
-            const highlights = [...singleWordsHighlights, ...phrasesHighlights];
-            const sentenceIds = new Set(highlights
+            // Filter out words if they are part of a sentence or phrase that is already highlighted
+            // .s indicates words in original text .( indicates words in translation
+            const highlights = [...phrasesHighlights, ...singleWordsHighlights];
+            const sentencesIds = new Set(highlights
+                .filter(highlight => highlight.ids.length === 1)
                 .flatMap(highlight => highlight.ids)
-                .filter(id => id.includes(".s") && !id.includes(".w"))
+                .filter(id => id.includes(".s") && !id.includes(".w") && !id.includes(".("))
             );
+            const phrasesIds = new Set(highlights
+                .filter(highlight => highlight.ids.length > 1)
+                .flatMap(highlight => highlight.ids)
+            );
+
             const filteredHighlights = highlights.filter(highlight => {
                 // Just a safety check
                 if (highlight.ids.length === 0)
                     return false;
-                // Sentence highlights always have exactly one id
-                if (highlight.ids.length === 1 && highlight.ids[0].includes(".s") && !highlight.ids[0].includes(".w"))
+                // Always include sentences
+                if (highlight.ids.length === 1 && sentencesIds.has(highlight.ids[0])) {
                     return true;
-                return !highlight.ids.some(id => sentenceIds.has(id.split(".w")[0]));
+                }
+                // For phrases, check if they are already included in the sentences
+                if (highlight.ids.length > 1 && highlight.ids.every(id => phrasesIds.has(id))) {
+                    return !highlight.ids.some(id => sentencesIds.has(id.split(".").slice(0, 2).join(".")));
+                }
+                // For single words, check if they are already included in the sentences or phrases
+                return !highlight.ids.some(id => sentencesIds.has(id.split(".").slice(0, 2).join("."))) &&
+                    !highlight.ids.some(id => phrasesIds.has(id));
             });
 
             // Send the partial response to the client
