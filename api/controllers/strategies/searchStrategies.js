@@ -1,6 +1,5 @@
 require('dotenv').config();
 const utils = require("../utils/utils");
-const url = require("node:url");
 
 
 class BaseSearchStrategy {
@@ -28,6 +27,7 @@ class BaseSearchStrategy {
         const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang, looseSearch);
         const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang, looseSearch);
 
+        console.log(JSON.stringify(phrasesQueryBody, null, 2));
 
         const promises = [
             esClient.search({
@@ -134,8 +134,8 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             .filter(hit => !translatedWordsSentencesIds.includes(hit._source.sentence_id))
             .map(hit => ({
                 ids: [hit._source.word_id],
-                texts: [hit._source.text],
-                lemmas: [hit._source.lemma],
+                //texts: [hit._source.text],
+                //lemmas: [hit._source.lemma],
                 rects: utils.groupCoordinates(hit._source.coordinates),
             }));
 
@@ -150,7 +150,7 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
         });
         const translatedSentences = translatedSentencesResponse.hits.hits.map(hit => ({
             ids: [hit._source.sentence_id],
-            texts: [hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text)],
+            //texts: [hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text)],
             rects: utils.groupCoordinates(hit._source.coordinates),
         }));
 
@@ -216,7 +216,6 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
                 body: {
                     query: queryBody,
                 },
-
             }));
         }
 
@@ -271,8 +270,8 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
         return singleWordsResponse.hits.hits
             .map(hit => ({
                 ids: [hit._source.word_id],
-                texts: [hit._source.text],
-                lemmas: [hit._source.lemma],
+                /*texts: [hit._source.text],
+                lemmas: [hit._source.lemma],*/
                 rects: [],
             }));
     }
@@ -342,15 +341,13 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
                     // If it's the first word or the difference in `wpos` between the current and previous word is greater than one
                     if (index === 0 || (hit._source.wpos - hits[index - 1]._source.wpos) > 1) {
                         // Start a new group
-                        acc.push({ids: [], texts: [], lemmas: [], rects: []});
+                        acc.push({ids: [], /*texts: [], lemmas: [],*/ rects: []});
                     }
                     // Add word details to the current group
                     const currentGroup = acc[acc.length - 1];
                     currentGroup.ids.push(hit._source.word_id);
-                    currentGroup.texts.push(hit._source.text);
-                    currentGroup.lemmas.push(hit._source.lemma);
-
-
+                    /*currentGroup.texts.push(hit._source.text);
+                    currentGroup.lemmas.push(hit._source.lemma);*/
                     currentGroup.rects.push(...hit._source.coordinates);
 
                     return acc;
