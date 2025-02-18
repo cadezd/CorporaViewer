@@ -236,7 +236,7 @@
       <!-- Search info -->
       <div class="toolbar-tooltip">
         <button class="btn btn-primary btn-tooltip" @click="toggleTooltip" :class="{ 'btn-disabled': showTooltip }">
-          <i class="fas fa-info-circle"></i>
+          <i class="fas fa-circle-question"></i>
         </button>
         <div class="tooltip-text" :class="{ 'tooltip-hidden': !showTooltip }">
           <button class="btn btn-primary hide-button" @click="toggleTooltip"><i class="fas fa-eye-slash"></i></button>
@@ -509,7 +509,7 @@ select {
 }
 
 .page-input {
-  width: 2rem;
+  width: 2.5rem;
   padding-bottom: 2px;
   border: none !important;
   border-bottom: #f0f7ee 2px solid !important;
@@ -675,7 +675,7 @@ import 'pdfjs-dist/build/pdf.worker.entry';
 import 'pdfjs-dist/web/pdf_viewer.css';
 import {Options, Vue} from 'vue-class-component';
 import {Watch} from 'vue-property-decorator';
-import {closest} from "fastest-levenshtein";
+import {closest, distance} from "fastest-levenshtein";
 import {mapGetters, mapMutations} from 'vuex';
 import axios from 'axios';
 import {SearchParams} from '@/types/SearchParams';
@@ -894,11 +894,26 @@ export default class PdfView extends Vue {
     });
 
     this.updateMeetingId(this.meeting_id);
-    let firstQuery = this.searchParams.words.replaceAll(/\s+OR\s+/g, " ") ?? "";
+
+    // Compose the query from the parameters used to retrieve relevant documents
+    let initialQuery = this.searchParams.words.replaceAll(/\s+OR\s+/g, " ") ?? "";
     if (this.searchParams.place?.names) {
-      firstQuery += Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz').join(" ");
+      // Get all valid place names
+      let validPlaces = Object.values(this.searchParams.place?.names).filter(name => name !== 'zzzzz');
+      // If the place name is composed of multiple words, wrap it in quotes
+      let placesQuery = validPlaces.map(place => {
+        if (place.includes(" ")) {
+          return `"${place}"`;
+        } else {
+          return place;
+        }
+      }).join(" ");
+
+      // Combine the initial query with the places query
+      initialQuery = `${initialQuery} ${placesQuery}`;
     }
-    this.query = firstQuery.trim();
+
+    this.query = initialQuery.trim();
     this.updateSearchQuery(this.query);
     // undefined language -> original language
     this.updateLanguage(undefined);
@@ -945,15 +960,25 @@ export default class PdfView extends Vue {
 
     // If a speaker is selected, find the most similar speaker from the list set it as selected
     if (this.searchParams.speaker) {
-      let selectedSpeakerLastName = this.searchParams.speaker.names[0].split(" ").pop();
-      let speakersLastNameList = this.speakerList
-          .map((speaker) => {
-            let lastWordIndex = speaker.split(" ").length - 1;
-            return speaker.split(" ")[lastWordIndex];
-          });
+      let selectedSpeakerLastNames = this.searchParams.speaker.names
+          .map((name) => name.split(" ").pop())
+          .filter((name): name is string => Boolean(name));
+      let meetingParticipantsLastNames = this.speakerList
+          .map((speaker) => speaker.split(" ").pop())
+          .filter((name): name is string => Boolean(name));
 
       // Get index of the most similar speaker last name to the selected speaker last name
-      let closestSpeakerIndex = speakersLastNameList.indexOf(closest(selectedSpeakerLastName!, speakersLastNameList));
+      let closestSpeakerIndex = 0;
+      let minDistance = Number.MAX_VALUE;
+      for (const lastName of selectedSpeakerLastNames) {
+        let mostSimilarSpeakerLastName = closest(lastName, meetingParticipantsLastNames);
+        let editDistance = distance(lastName, mostSimilarSpeakerLastName);
+        if (editDistance < minDistance) {
+          minDistance = editDistance;
+          closestSpeakerIndex = meetingParticipantsLastNames.indexOf(mostSimilarSpeakerLastName);
+        }
+      }
+
       let closestSpeaker = this.speakerList[closestSpeakerIndex];
       this.updateSpeaker(closestSpeaker);
     }
