@@ -257,6 +257,7 @@ export class PdfHighlights extends PdfHighlightsAbstract {
                         quadPoints: quadPoints.flat(),
                         opacity: 0.5,
                         color: {r: 255, g: 255, b: 0},
+
                     },
                 );
 
