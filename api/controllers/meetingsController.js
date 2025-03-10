@@ -578,33 +578,13 @@ const getSpeakers = async (req, res) => {
         let uniqueSpeakers = response.aggregations.unique_speakers.buckets
             .map(bucket => bucket.key.trim())
             // Remove empty speakers (noise)
-            .filter(speaker => speaker)
-            // Remove speakers with only one word (noise) which is not capitalized
-            .filter(speaker => speaker.split(" ").length > 1 || speaker.split(" ")[0][0] === speaker.split(" ")[0][0].toUpperCase());
+            .filter(speaker => speaker !== "");
 
         // Remove diuplicates
         uniqueSpeakers = [...new Set(uniqueSpeakers)];
 
-
-        // Order them by length of the speaker name (ascending)
-        uniqueSpeakers = uniqueSpeakers.sort((a, b) => a.length - b.length);
-
-        const seenLastNames = new Set(); // To track last names we've encountered
-        const filteredSpeakers = [];
-        for (const speaker of uniqueSpeakers) {
-            const words = speaker.split(" ");
-            const lastName = words[words.length - 1];
-
-            // If we haven't seen this last name before
-            // And current name doesn't contain any of the last names we've seen before, add it to the list
-            if (!seenLastNames.has(lastName) && !Array.from(seenLastNames).some(lastName => speaker.includes(lastName))) {
-                filteredSpeakers.push(speaker);
-                seenLastNames.add(lastName);
-            }
-        }
-
         res.json({
-            speakers: filteredSpeakers
+            speakers: uniqueSpeakers
         });
 
 
