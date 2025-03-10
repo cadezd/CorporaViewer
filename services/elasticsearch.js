@@ -1,7 +1,9 @@
-const { Client } = require('@elastic/elasticsearch');
+const {Client} = require('@elastic/elasticsearch');
 
+const hosts = process.env.ELASTICSEARCH_HOSTS || 'http://localhost:9200';
+const nodes = hosts.split(',');
 const esClient = new Client({
-    node: 'http://localhost:9200',
+    nodes: nodes,
 });
 
 module.exports = esClient;
