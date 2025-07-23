@@ -3,7 +3,7 @@ const fs = require('fs');
 const async = require('async');
 
 // Create a queue with a concurrency limit of 10
-const queue = async.queue(async (taskData) => {
+const queue = async.queue(async (taskData, ca) => {
     try {
         const path = taskData.path;
         var file = fs.createReadStream(path);
@@ -16,7 +16,7 @@ const queue = async.queue(async (taskData) => {
         console.error("Error processing thumbnail request:", error);
         res.status(500).json({ error: "Internal server error" });
     }
-}, 1); // Concurrency limit set to 10
+}, 10); // Concurrency limit set to 10
 
 function reformatId(id) {
     const reformattedId = id.split("_").map((item, index) => {
@@ -37,7 +37,7 @@ var getById = async (req, res) => {
 
     var file = fs.createReadStream(path);
     var stat = fs.statSync(path);
-    
+
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=${filename}.pdf`);

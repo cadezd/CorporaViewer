@@ -27,7 +27,6 @@ class BaseSearchStrategy {
         const singleWordsQueryBody = utils.wordsSearchQueryBuilder(meetingId, words, speaker, lang, looseSearch);
         const phrasesQueryBody = utils.phrasesSearchQueryBuilder(meetingId, phrases, speaker, lang, looseSearch);
 
-        console.log(JSON.stringify(phrasesQueryBody, null, 2));
 
         const promises = [
             esClient.search({
@@ -148,6 +147,8 @@ class OriginalLanguageSearchStrategy extends BaseSearchStrategy {
             },
             size: 10000
         });
+
+
         const translatedSentences = translatedSentencesResponse.hits.hits.map(hit => ({
             ids: [hit._source.sentence_id],
             //texts: [hit._source.translations.filter(translation => translation.original === 0).map(translation => translation.text)],
@@ -322,7 +323,7 @@ class TranslatedLanguageSearchStrategy extends BaseSearchStrategy {
                 }
             }
 
-            promises.push(await esClient.search({
+            promises.push(esClient.search({
                 index: process.env.WORDS_INDEX_NAME || "words-index",
                 size: 10000,
                 track_total_hits: false,

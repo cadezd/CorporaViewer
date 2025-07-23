@@ -227,7 +227,7 @@ const buildHtmlElement = (start, text, alternativeText, end) => {
  * @param {Object[]} placeNames - The place names to search for in the meetings.
  * @returns {Object|null} - The query body for searching meetings or null if there are no word queries or place names.
  */
-const buildQueryBody = (words, placeNames, speaker, filters) => {
+const   buildQueryBody = (words, placeNames, speaker, filters) => {
     var shouldQueries = [];
     const tokenizedQuery = tokenizeQuery(words);
 
