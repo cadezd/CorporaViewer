@@ -23,8 +23,7 @@
           <div class="toolbar-content">
             <select class="input-field" v-model="transcriptLanguage">
               <option value="">{{ $t('dontTranslate') }}</option>
-              <option value="sl">{{ $t('sl') }}</option>
-              <option value="de">{{ $t('de') }}</option>
+              <option v-for="lang in languageOptions" :value="lang">{{ $t(lang) }}</option>
             </select>
           </div>
         </div>
@@ -151,8 +150,7 @@
         <div class="toolbar-content">
           <select class="input-field" v-model="transcriptLanguage">
             <option value="">{{ $t('dontTranslate') }}</option>
-            <option value="sl">{{ $t('sl') }}</option>
-            <option value="de">{{ $t('de') }}</option>
+            <option v-for="lang in languageOptions" :value="lang">{{ $t(lang) }}</option>
           </select>
         </div>
       </div>
@@ -683,6 +681,7 @@ import {PdfHighlights, TranscriptHighlights} from '@/types/Highlights';
 import {Pagination} from '@/types/Pagination';
 import {MeetingSearchParams} from "@/types/MeetingSearchParams";
 import store from "@/store";
+import {corporaList} from '@/data/corporaInfo';
 
 @Options({
   props: {
@@ -738,6 +737,7 @@ export default class PdfView extends Vue {
 
   meeting_id?: string;
   transcriptLanguage: string = '';
+  languageOptions: string[] = ['sl'];
   speakerList: string[] = [];
 
 
@@ -760,6 +760,19 @@ export default class PdfView extends Vue {
   async mounted(): Promise<void> {
     this.handleLoading();
     this.show = this.windowAllowsPdfDisplay() ? 'pdf' : 'transcript';
+
+    // not the best way, but works
+    console.log(this.meeting_id);
+    switch (this.meeting_id?.split('_')[0]) {
+      case "DZK":
+        this.languageOptions = corporaList[0].languages;
+        break;
+      case "yu1Parl":
+        this.languageOptions = corporaList[1].languages;
+        break;
+      default:
+        this.languageOptions = ['sl'];
+    }
 
     window.addEventListener('resize', this.onResize);
 

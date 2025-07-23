@@ -264,7 +264,7 @@ export class PdfHighlights extends PdfHighlightsAbstract {
             }
         }
 
-        if (this.pdfAnnotationFactory) {
+        if (this.pdfAnnotationFactory !== undefined) {
             this.displayPdf(true);
         }
     }
@@ -282,12 +282,22 @@ export class PdfHighlights extends PdfHighlightsAbstract {
             }
         });
 
-        this.pdfjsLib.getDocument({
-            data: this.pdfAnnotationFactory!.write().slice(0)
-        }).promise.then((pdf: any) => {
-            this.pdfViewer!.setDocument(pdf);
-            this.touched = true;
-        });
+        /*Don't ask me why or how... the main thing is that it works*/
+        try {
+            this.pdfjsLib.getDocument({
+                data: this.pdfAnnotationFactory!.write().slice(0)
+            }).promise.then((pdf: any) => {
+                this.pdfViewer!.setDocument(pdf);
+                this.touched = true;
+            });
+        } catch (error) {
+            this.pdfjsLib.getDocument({
+                data: this.pdfAnnotationFactory!.write().slice(0)
+            }).promise.then((pdf: any) => {
+                this.pdfViewer!.setDocument(pdf);
+                this.touched = true;
+            });
+        }
     }
 
     onMatchesFound = (event: any) => {

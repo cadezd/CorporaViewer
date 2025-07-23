@@ -78,6 +78,23 @@ const getPage = async (req, res) => {
     const searchAfterDate = req.query.searchAfterDate
     const searchAfterIndex = req.query.searchAfterIndex
 
+    console.log("Words", typeof words, words)
+    console.log("Speaker", typeof speaker, speaker)
+    console.log("PlaceNames", typeof placeNames, placeNames)
+    console.log("dateFrom", typeof filters.dateFrom, filters.dateFrom)
+    console.log("dateTo", typeof filters.dateTo, filters.dateTo)
+    console.log("languages", typeof filters.languages, filters.languages)
+    console.log("corpuses", typeof filters.corpuses, filters.corpuses)
+    console.log("sort", typeof filters.sort, filters.sort)
+    console.log("page", typeof page, page)
+    console.log("pitId", typeof pitId, pitId)
+    console.log("searchAfterScore", typeof searchAfterScore, searchAfterScore)
+    console.log("searchAfterDate", typeof searchAfterDate, searchAfterDate)
+    console.log("searchAfterIndex", typeof searchAfterIndex, searchAfterIndex)
+
+    console.log()
+
+
     // check if all required query parameters are provided
     if (!filters.dateFrom || !filters.dateTo || !filters.languages || !filters.corpuses || !page) {
         res.json({
@@ -133,7 +150,7 @@ const getPage = async (req, res) => {
 
     const queryBody = utils.buildQueryBody(words, placeNames, speaker, filters)
 
-    // console.log(JSON.stringify(queryBody, null, 2))
+    console.log(JSON.stringify(queryBody, null, 2))
 
     try {
         // query which is scored by number of translations found in the nested query
@@ -141,10 +158,27 @@ const getPage = async (req, res) => {
             _source: ["id", "date", "titles", "agendas", "corpus"],
             body: {
                 query: {
-                    function_score: {
-                        query: queryBody,
-                        score_mode: "sum",
-                    }
+                    bool: {
+                        filter: [
+                            {
+                                range:
+                                    {
+                                        "date": {
+                                            gte: utils.formatDate(new Date(filters.dateFrom), "dd.MM.yyyy"),
+                                            lte: utils.formatDate(new Date(filters.dateTo), "dd.MM.yyyy")
+                                        }
+                                    }
+                            }
+                        ],
+                        must: [
+                            {
+                                function_score: {
+                                    query: queryBody,
+                                    score_mode: "sum",
+                                }
+                            }
+                        ]
+                    },
                 }
             },
             size: 10,
@@ -370,6 +404,8 @@ const getHighlights = async (req, res) => {
                     }
                 }
             });
+
+            console.log(JSON.stringify(response, null, 2));
 
             if (!response || (response && !response.aggregations.group_by_segment_id.buckets.length)) {
                 break;

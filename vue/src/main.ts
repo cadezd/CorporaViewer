@@ -15,22 +15,13 @@ import VueDatePicker from '@vuepic/vue-datepicker';
 import '@vuepic/vue-datepicker/dist/main.css';
 
 // axios
-import axios from 'axios'; 
+import axios from 'axios';
 
 // styles
 import './style.css'
 
 // multilanguage support
-import { createI18n } from 'vue-i18n'
-const i18n = createI18n({
-    locale: 'sl',
-    fallbackLocale: 'de',
-    messages: {
-        sl: require('./locales/sl.json'),
-        de: require('./locales/de.json'),
-        en: require('./locales/en.json'),
-    }
-})
+import i18n from './data/i18setup'
 
 const app = createApp(App)
 app.use(i18n)
@@ -40,7 +31,7 @@ app.config.globalProperties.$filters = {
     highlightText(text: string, targetWords: string[]) {
         if (!text) return '';
         if (!targetWords || targetWords.length === 0) return text;
-        
+
         const words = text.split(' ');
         let result = '';
         words.forEach(word => {
