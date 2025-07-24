@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import { Place } from "../types/Place";
+import { Place } from "./Place";
 import { Attendee } from "./Attendee";
 
 export interface SearchParamsInterface {

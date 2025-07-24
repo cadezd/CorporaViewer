@@ -2,9 +2,9 @@
     <div class="paging" v-if="numOfDocuments > 0">
         <div class="paging-content row">
             <div class="paging-row col-md-6">
-                <PageBubble 
+                <PageBubble
                     v-if="displayFirstPage"
-                    v-bind:page="0" 
+                    v-bind:page="0"
                     v-bind:currentPage="currentPage"
                     v-bind:onClick="onPageClick"
                 ></PageBubble>
@@ -13,7 +13,7 @@
                 </div>
                 <div v-for="page in getShownPages()">
                     <PageBubble
-                        v-bind:page="page" 
+                        v-bind:page="page"
                         v-bind:currentPage="currentPage"
                         v-bind:onClick="onPageClick"
                     ></PageBubble>
@@ -100,7 +100,7 @@
 
 <script lang="ts">
 import { Options, Vue } from 'vue-class-component';
-import PageBubble from '@/components/PageBubble.vue';
+import PageBubble from '@components/PageBubble.vue';
 import { mapGetters } from 'vuex';
 import { Results } from '@/types/Results';
 
@@ -133,7 +133,7 @@ export default class Paging extends Vue.with(Props) {
 
     displayLastPage: boolean = true;
     displayLastDots: boolean = true;
-    
+
     onPageClick(page: number) {
         this.$emit('page-click', page);
     }

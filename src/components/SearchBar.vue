@@ -104,7 +104,7 @@
 <script lang="ts">
 import axios from 'axios';
 import { Options, Vue } from 'vue-class-component';
-import Typeahead from '@/components/Typeahead.vue';
+import Typeahead from '@components/Typeahead.vue';
 import { Attendee } from '@/types/Attendee';
 import { Place } from '@/types/Place';
 import { Watch } from 'vue-property-decorator';

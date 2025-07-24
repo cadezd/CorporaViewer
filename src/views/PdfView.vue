@@ -667,8 +667,8 @@ input[type=number] {
 
 <script lang="ts">
 import Typeahead from '@/components/Typeahead.vue';
-import PdfDisplay from '@/components/PdfDisplay.vue';
-import Transcript from '@/components/Transcript.vue';
+import PdfDisplay from '@components/PdfDisplay.vue';
+import Transcript from '@components/Transcript.vue';
 import 'pdfjs-dist/build/pdf.worker.entry';
 import 'pdfjs-dist/web/pdf_viewer.css';
 import {Options, Vue} from 'vue-class-component';

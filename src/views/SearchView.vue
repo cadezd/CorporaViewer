@@ -94,10 +94,10 @@ import { mapMutations, mapGetters } from 'vuex';
 import i18n from '@/data/i18setup';
 
 // components
-import SearchBar from '@/components/SearchBar.vue';
-import SearchResult from '@/components/SearchResult.vue';
-import SearchFilters from '@/components/SearchFilters.vue';
-import Paging from '@/components/Paging.vue';
+import SearchBar from '@components/SearchBar.vue';
+import SearchResult from '@components/SearchResult.vue';
+import SearchFilters from '@components/SearchFilters.vue';
+import Paging from '@components/Paging.vue';
 
 // types
 import { Attendee } from '@/types/Attendee';

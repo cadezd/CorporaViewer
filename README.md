@@ -1,12 +1,19 @@
-# CorporaViewer
-Parliamentary corpora viewer (Martin Stojanoski): web application for searching the historical parliamentary corpora Kranjska and yu1parl.
+# dihur-kranjska-front
 
-## Installation
-
-<!-- TODO -->
-
-## Running
-
-```bash
-npm run start
+## Project setup
 ```
+npm install
+```
+
+### Compiles and hot-reloads for development
+```
+npm run serve
+```
+
+### Compiles and minifies for production
+```
+npm run build
+```
+
+### Customize configuration
+See [Configuration Reference](https://cli.vuejs.org/config/).
