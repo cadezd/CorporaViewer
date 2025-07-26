@@ -66,7 +66,7 @@
   margin: 0px;
 }
 
-.row > *{
+.row > * {
   padding: 5px;
 }
 
@@ -103,14 +103,14 @@
 
 <script lang="ts">
 import axios from 'axios';
-import { Options, Vue } from 'vue-class-component';
+import {Options, Vue} from 'vue-class-component';
 import Typeahead from '@components/Typeahead.vue';
-import { Attendee } from '@/types/Attendee';
-import { Place } from '@/types/Place';
-import { Watch } from 'vue-property-decorator';
-import { mapGetters, mapMutations } from 'vuex';
+import {Attendee} from '@/types/Attendee';
+import {Place} from '@/types/Place';
+import {Watch} from 'vue-property-decorator';
+import {mapGetters, mapMutations} from 'vuex';
 import i18n from '@/data/i18setup';
-import { Filters } from '@/types/Filters';
+import {Filters} from '@/types/Filters';
 
 @Options({
   components: {
@@ -171,12 +171,12 @@ export default class SearchBar extends Vue {
 
   krajDisplayFn(kraj: Place): string {
     const locale = this.$i18n.locale;
-    let placeString = kraj.names[locale] ?? "";
+    let placeString = (kraj.names[locale] === "zzzzz" ? "" : kraj.names[locale]) ?? "";
 
     //append each key-value pair to the string
     for (const [key, value] of Object.entries(kraj.names)) {
-      if (key != locale) {
-        placeString += ( placeString.length > 0 ? " / " : "" ) + value;
+      if (key != locale && value != "zzzzz") {
+        placeString += (placeString === "" ? "" : " / ") + value;
       }
     }
 
@@ -189,27 +189,24 @@ export default class SearchBar extends Vue {
 
   getSpeakersList() {
     const corpora = this.searchFilters.corpora;
-    axios.get(process.env.VUE_APP_API_URL +  '/poslanci/getAll')
+    axios.get(process.env.VUE_APP_API_URL + '/poslanci/getAll')
         .then(response => {
-          this.speakersList = [ {
+          this.speakersList = [{
             id: "1",
-            name: i18n.global.t('dezelniGlavar')
+            names: [i18n.global.t('dezelniGlavar')]
           },
             {
               id: "2",
-              name: i18n.global.t('porocevalec')
+              names: [i18n.global.t('porocevalec')]
             },
             {
               id: "3",
-              name: i18n.global.t('predsednik')
+              names: [i18n.global.t('predsednik')]
             },
-            ...response.data.filter((speaker: any) => {
-              const speakerCorpora = new Set(speaker._source.corpora.map((corpus: string) => corpus.toLowerCase()));
-              return corpora.length == 0 || corpora.some(corpora => speakerCorpora.has(corpora.toLowerCase()));
-            }).map((speaker: any) => {
+            ...response.data.map((speaker: any) => {
               return {
-                id: speaker._id,
-                name: speaker._source.name
+                id: speaker._source.id,
+                names: speaker._source.names
               }
             }).sort((a: Attendee, b: Attendee) => {
               return this.compareSpeakers(a, b);
@@ -222,7 +219,7 @@ export default class SearchBar extends Vue {
 
   getplaceNamesList() {
     const corpora = this.searchFilters.corpora;
-    axios.get(process.env.VUE_APP_API_URL +  '/krajevnaImena/getAll')
+    axios.get(process.env.VUE_APP_API_URL + '/krajevnaImena/getAll')
         .then(response => {
           this.placeNamesList = response.data
               .filter((place: any) => {
@@ -239,7 +236,7 @@ export default class SearchBar extends Vue {
         });
   }
 
-  comparePlaceNames(a: Place , b: Place): number {
+  comparePlaceNames(a: Place, b: Place): number {
     // first compare the locale, then compare the other locales if the first one is the same
     const locale = this.$i18n.locale;
     const placeNameA = this.getFirstValidPlaceName(a, locale);
@@ -248,12 +245,15 @@ export default class SearchBar extends Vue {
   }
 
   getFirstValidPlaceName(place: Place, preferedLocale: string): string {
-    if (Object.keys(place.names).includes(preferedLocale)) {
+    if (Object.keys(place.names).includes(preferedLocale) && place.names[preferedLocale] !== "zzzzz") {
       return place.names[preferedLocale];
-    }
-    else {
-      // return the first value in the object
-      return Object.values(place.names)[0];
+    } else {
+      for (const [key, value] of Object.entries(place.names)) {
+        if (value != "zzzzz") {
+          return value;
+        }
+      }
+      return "zzzzz";
     }
   }
 
