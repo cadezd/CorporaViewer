@@ -12,7 +12,8 @@
         </div>
         <div class="row text-container">
           <div v-if="!wasMatchAll" class="col-md-12 snippet-container">
-            <span v-for="i in getMaxNumOfSnippets()" v-html="$filters.highlightText(getSnippet(i-1), highlights[i-1])"></span>
+            <span v-for="i in getMaxNumOfSnippets()"
+                  v-html="$filters.highlightText(getSnippet(i-1), highlights[i-1])"></span>
           </div>
           <div v-else class="col-md-12 agendas-container">
             <span v-html="getAgendas()"></span>
@@ -20,14 +21,15 @@
         </div>
         <div class="row" style="position: relative;">
           <div class="buttons-container">
-            <button v-if="wasMatchAll" class="btn btn-primary" @click="toggleDetails" :disabled="isMoreAgendasButtonDisabled()">
+            <button v-if="wasMatchAll" class="btn btn-primary" @click="toggleDetails"
+                    :disabled="isMoreAgendasButtonDisabled()">
               <i v-if="!showingDetails" class="fas fa-angle-down"></i>
               <i v-else class="fas fa-angle-up"></i>
-              {{ ( !showingDetails ? $t('expandAgendaButton') : $t('hideAgendaButton') ) }}
+              {{ (!showingDetails ? $t('expandAgendaButton') : $t('hideAgendaButton')) }}
             </button>
             <button class="btn btn-primary" @click="openPdf">
               <i class="fas fa-file-pdf"></i>
-              {{ $t('viewDocumentButton' )}}
+              {{ $t('viewDocumentButton') }}
             </button>
           </div>
           <div v-if="!wasMatchAll" class="col-md-12 details-container">
@@ -57,7 +59,7 @@
   border-bottom: #708d81 4px solid;
   padding: 1.5rem;
   color: black;
-  margin: 1rem 1,5rem;
+  margin: 1rem 1, 5rem;
 }
 
 .text-container {
@@ -114,10 +116,10 @@
 </style>
 
 <script lang="ts">
-import { Watch } from 'vue-property-decorator';
-import { Options, Vue } from 'vue-class-component';
-import { mapGetters } from 'vuex';
-import { Meeting } from '@/types/Meeting';
+import {Watch} from 'vue-property-decorator';
+import {Options, Vue} from 'vue-class-component';
+import {mapGetters} from 'vuex';
+import {Meeting} from '@/types/Meeting';
 
 
 @Options({
@@ -151,14 +153,14 @@ export default class SearchResult extends Vue {
   moveDetails: boolean = false;
   displayDetails: boolean = false;
 
-  @Watch('meeting', { immediate: true, deep: true })
+  @Watch('meeting', {immediate: true, deep: true})
   onMeetingChanged() {
     this.updateHighlights();
     this.updateImageLink();
     this.scrollToFirstResult();
   }
 
-  @Watch('page', { immediate: true })
+  @Watch('page', {immediate: true})
   onPageChanged() {
     this.meeting = this.resultsInstance.getMeetingOn(this.page, this.index)!
   }
@@ -167,14 +169,14 @@ export default class SearchResult extends Vue {
     this.wasMatchAll = this.searchParamsInstance?.isMatchAll()
     this.meeting = this.resultsInstance.getMeetingOn(this.page, this.index)!
 
-    this.selectedSpeakerName = this.searchParamsInstance?.speaker?.name ?? "";
+    this.selectedSpeakerName = this.searchParamsInstance?.speaker?.names[0] ?? "";
     this.result = this.$refs.result as HTMLElement;
     this.scrollToFirstResult();
   }
 
   scrollToFirstResult() {
     if (this.index === 0) {
-      this.result?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      this.result?.scrollIntoView({behavior: 'smooth', block: 'start'});
     }
   }
 
@@ -204,7 +206,7 @@ export default class SearchResult extends Vue {
 
   toggleDetails() {
     this.showingDetails = !this.showingDetails;
-    this.result?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    this.result?.scrollIntoView({behavior: 'smooth', block: 'start'});
   }
 
   isMoreAgendasButtonDisabled() {
@@ -250,26 +252,23 @@ export default class SearchResult extends Vue {
     const untrimmedSnippetWordList = this.meeting.sentences[index].text.split(" ");
     // Get the indices of the target words in the sentence ignoring all special characters
     const targetWordIndices = untrimmedSnippetWordList
-        .map((word, i) => targetWordsLowercase.includes(word.toLowerCase().replace(/[^a-zA-ZäöüßÄÖÜčšžČŠŽ]/g,"")) ? i : -1)
+        .map((word, i) => targetWordsLowercase.includes(word.toLowerCase().replace(/[^a-zA-ZäöüßÄÖÜčšžČŠŽ]/g, "")) ? i : -1)
         .filter(i2 => i2 !== -1);
 
     if (targetWordIndices.length === 0 && !this.selectedSpeakerName) {
       return this.$t('noTargetWordsFound');
-    }
-    else if (targetWordIndices.length === 0 && this.selectedSpeakerName) {
+    } else if (targetWordIndices.length === 0 && this.selectedSpeakerName) {
       var snippet = (index == 0 ? '<h6 style="text-align: left; padding-left: 1rem;"><span class="highlight-result">' + this.selectedSpeakerName + "</span>:</h6>" : "")
       snippet += untrimmedSnippetWordList.slice(0, 15).join(" ") + " ... ";
       return snippet;
-    }
-    else if (targetWordIndices.length === 1) {
+    } else if (targetWordIndices.length === 1) {
       const targetWordIndex = targetWordIndices[0];
       const snippetStartIndex = Math.max(0, targetWordIndex - 7);
       const snippetEndIndex = Math.min(untrimmedSnippetWordList.length, targetWordIndex + 8);
       const snippet = untrimmedSnippetWordList.slice(snippetStartIndex, snippetEndIndex).join(" ");
 
       return (index == 0 ? " ... " : "") + snippet + " ... ";
-    }
-    else {
+    } else {
       return (index == 0 ? " ... " : "") + this.getSnippetForMultipleTargetWords(untrimmedSnippetWordList, targetWordIndices, 0);
     }
   }
@@ -304,8 +303,7 @@ export default class SearchResult extends Vue {
   getAgendas() {
     if (!this.meeting.agendas) {
       return "";
-    }
-    else {
+    } else {
       //get current page language
       const lang = this.$i18n.locale;
 
@@ -319,7 +317,9 @@ export default class SearchResult extends Vue {
       //if agendas in current page language exist, return them
       if (agenda) {
         element = "<h4>" + this.$t('agenda') + ":</h4><div class=\"agendas\">" +
-            agenda.items.slice(0, iTo).map(item => { return item.text }).join("<br>") + "</div>";
+            agenda.items.slice(0, iTo).map(item => {
+              return item.text
+            }).join("<br>") + "</div>";
       }
 
       return element;
