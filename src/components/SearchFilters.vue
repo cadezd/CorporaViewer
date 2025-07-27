@@ -49,7 +49,8 @@
     <div class="filter-content">
       <div v-for="lang in allLanguages" class="row">
         <div class="col-2">
-          <input class="form-check-input checkbox" :value="lang" type="checkbox" v-model="searchFilters.languages" :disabled="enabledLanguages[lang] != true">
+          <input class="form-check-input checkbox" :value="lang" type="checkbox" v-model="searchFilters.languages"
+                 :disabled="enabledLanguages[lang] != true">
         </div>
         <div class="col-10 text-left">
           <label class="form-check-label">{{ $t(lang) }}</label>
@@ -131,12 +132,12 @@ label {
 </style>
 
 <script lang="ts">
-import { Options, Vue } from 'vue-class-component';
-import { Watch } from 'vue-property-decorator';
-import { corporaList } from '../data/corporaInfo';
-import { Corpus } from '@/types/Corpus';
-import { mapGetters, mapMutations } from 'vuex';
-import { Filters } from '@/types/Filters';
+import {Options, Vue} from 'vue-class-component';
+import {Watch} from 'vue-property-decorator';
+import {corporaList} from '../data/corporaInfo';
+import {Corpus} from '@/types/Corpus';
+import {mapGetters, mapMutations} from 'vuex';
+import {Filters} from '@/types/Filters';
 
 @Options({
   computed: {
@@ -220,35 +221,51 @@ export default class SearchFilters extends Vue {
   }
 
   initCorporaAndFilters() {
-    this.corpora = corporaList
+    this.corpora = corporaList;
 
-    let minDateFrom: Date | null = null
-    let maxDateTo: Date | null = null
-    let languages = new Set<string>()
-    let corpora = new Set<string>()
+    // Compute global bounds for all corpora
+    let minDateFrom: Date | null = null;
+    let maxDateTo: Date | null = null;
+    let allLanguages = new Set<string>();
+    let allCorpora = new Set<string>();
 
     this.corpora.forEach(corpus => {
       if (minDateFrom == null || corpus.dateFrom < minDateFrom) {
-        minDateFrom = corpus.dateFrom
+        minDateFrom = corpus.dateFrom;
       }
       if (maxDateTo == null || corpus.dateTo > maxDateTo) {
-        maxDateTo = corpus.dateTo
+        maxDateTo = corpus.dateTo;
       }
       corpus.languages.forEach(language => {
-        languages.add(language)
-        this.allLanguages.add(language)
-      })
-      corpora.add(corpus.name)
-    })
+        allLanguages.add(language);
+        this.allLanguages.add(language);
+      });
+      allCorpora.add(corpus.name);
+    });
 
-    this.applyFilterValues(
-        minDateFrom,
-        maxDateTo,
-        Array.from(languages),
-        this.searchFilters.initializing
-    )
-    this.previousCorpora = Array.from(corpora)
-    this.updateCorpora(Array.from(corpora))
+    // Only set defaults if we're initializing for the first time
+    if (this.searchFilters.initializing) {
+      this.applyFilterValues(minDateFrom, maxDateTo, Array.from(allLanguages), true);
+      this.updateCorpora(Array.from(allCorpora));
+      this.searchFilters.sort = "relevance";
+    }
+
+    // Sync previousCorpora so the watcher works correctly
+    this.previousCorpora = Array.from(this.searchFilters.corpora);
+
+    // Always recompute min/max ranges for the date picker UI
+    this.minDate = minDateFrom!;
+    this.maxDate = maxDateTo!;
+    this.yearRangeFrom = [this.minDate.getFullYear().toString(), this.maxDate.getFullYear().toString()];
+    this.yearRangeTo = [this.minDate.getFullYear().toString(), this.maxDate.getFullYear().toString()];
+
+    // Update enabled languages for checkboxes
+    this.enabledLanguages = {};
+    this.allLanguages.forEach(language => {
+      this.enabledLanguages[language] = this.searchFilters.languages.includes(language);
+    });
+
+    this.searchFilters.initializing = false;
   }
 
   updateFiltersOnCorporaChanged() {
@@ -258,17 +275,15 @@ export default class SearchFilters extends Vue {
 
     this.corpora.forEach(corpus => {
       if (this.searchFilters.corpora.includes(corpus.name)) {
-        if (minDateFrom == null || corpus.dateFrom < minDateFrom) {
-          minDateFrom = corpus.dateFrom
-        }
-        if (maxDateTo == null || corpus.dateTo > maxDateTo) {
-          maxDateTo = corpus.dateTo
-        }
-        corpus.languages.forEach(language => {
-          languages.add(language)
-        })
+        if (minDateFrom == null || corpus.dateFrom < minDateFrom) minDateFrom = corpus.dateFrom
+        if (maxDateTo == null || corpus.dateTo > maxDateTo) maxDateTo = corpus.dateTo
+        corpus.languages.forEach(language => languages.add(language))
       }
     })
+
+    // Force reset to new full range
+    this.searchFilters.dateFrom = minDateFrom!
+    this.searchFilters.dateTo = maxDateTo!
 
     this.applyFilterValues(minDateFrom, maxDateTo, Array.from(languages), true)
   }
@@ -281,10 +296,11 @@ export default class SearchFilters extends Vue {
   ) {
     this.searchFilters.initializing = false
 
-    console.log(languages)
-
     this.minDate = minDate == null ? new Date() : minDate
     this.maxDate = maxDate == null ? new Date() : maxDate
+
+    console.log(languages, this.minDate, this.maxDate)
+
     this.yearRangeFrom = [this.minDate.getFullYear().toString(), this.maxDate.getFullYear().toString()]
     this.yearRangeTo = [this.minDate.getFullYear().toString(), this.maxDate.getFullYear().toString()]
 
