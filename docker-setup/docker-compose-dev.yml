@@ -57,25 +57,6 @@ services:
       timeout: 10s
       retries: 120
 
-  api:
-    depends_on:
-      es01:
-        condition: service_healthy
-    image: 260620021/parlavis-api:latest
-    restart: always
-    ports:
-      - ${API_PORT}:3000
-    environment:
-      - IP_ADDRESS=0.0.0.0
-      - ELASTICSEARCH_HOSTS=http://es01:9200
-      - MEETINGS_INDEX_NAME=${MEETINGS_INDEX_NAME}
-      - WORDS_INDEX_NAME=${WORDS_INDEX_NAME}
-      - SENTENCES_INDEX_NAME=${SENTENCES_INDEX_NAME}
-      - PATH_TO_DATA=/app/data
-    volumes:
-      - ${PATH_TO_DATA}:/app/data
-    mem_limit: ${MEM_LIMIT}
-
 volumes:
   esdata01:
     driver: local
