@@ -65,5 +65,8 @@
   "tooltip": "Vnesite besede, ločene s presledki, in orodje bo poiskalo pojavitve teh besed. Če je vpisana osnovna oblika besede (lema), orodje poišče tudi druge oblike besede. Uporabite narekovaje (npr. \"<em>primer fraze</em>\") za iskanje fraze v besedilu. Ob vnosu iskalnega niza in izbiri govornika bo orodje označilo mesta, kjer se niz pojavi v govoru izbranega govornika. Če ne vnesete iskalnega niza, a izberete govornika, bo orodje označilo vse govore izbranega govornika. Zaradi morebitnih OCR-napak omogoča iskanje tudi podobnih besed z majhnimi razlikami (Ohlapno iskanje).",
   "looseSearch": "Ohlapno iskanje",
   "allSpeakers": "Vsi govorci ...",
-  "transcriptWillBeDisplayedHere": "Transkript bo prikazan tukaj."
+  "transcriptWillBeDisplayedHere": "Transkript bo prikazan tukaj.",
+  "highlights": {
+    "count": "Zadetek {current} / {total}"
+  }
 }

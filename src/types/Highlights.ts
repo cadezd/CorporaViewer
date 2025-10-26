@@ -2,6 +2,7 @@ import * as PdfJsViewer from 'pdfjs-dist/web/pdf_viewer';
 import {reactive} from 'vue';
 import {AnnotationFactory} from 'annotpdf';
 import {Rect} from "@/types/Rect";
+import i18n from '@/data/i18setup';
 
 export abstract class HighlightsAbstract {
 
@@ -377,7 +378,10 @@ export class PdfHighlights extends PdfHighlightsAbstract {
         if (this.total == 0) {
             return "";
         } else {
-            return `Zadetek ${this.index + 1} / ${this.total}`;
+            return i18n.global.t('highlights.count', {
+                current: this.index + 1,
+                total: this.total
+            }) as string;
         }
     }
 }
