@@ -99,8 +99,8 @@
 
   .menu-container {
     position: absolute;
-    top: 0px;
-    left: 0px;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     background-color: #1e1e2475;
@@ -186,7 +186,6 @@ export default {
 
     onMounted(() => {
       window.addEventListener('resize', handleResize);
-      document.title = 'Zapisniki parlamentarnih zasedanj 1861-1913'
     });
 
     onBeforeUnmount(() => {
