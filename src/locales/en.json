@@ -64,7 +64,7 @@
     "page": "Page",
     "tooltip": "Enter words separated by spaces and the tool will search for occurrences of those words. If the base form of a word (lemma) is entered, the tool will also find other forms of that word. Use quotation marks (e.g. \"<em>example phrase</em>\") to search for a phrase in the text. When you enter a search string and select a speaker, the tool will highlight places where the string appears in that speaker’s speech. If you do not enter a search string but select a speaker, the tool will highlight all speeches by the selected speaker. To account for possible OCR errors, the tool also allows searching for similar words with small differences (Loose search).",
     "looseSearch": "Loose search",
-    "allSearch": "All speakers ...",
+    "allSpeakers": "All speakers ...",
     "transcriptWillBeDisplayedHere": "The transcript will be displayed here.",
     "highlights": {
       "count": "Hit {current} / {total}"
